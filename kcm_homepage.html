@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>나의 시작 페이지</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #f5f0e8; color: #1a1a1a; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', Georgia, serif; min-height: 100vh; }
+  .masthead { border-bottom: 4px double #1a1a1a; padding: 12px 24px 8px; text-align: center; background: #faf7f0; }
+  .masthead-top { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #555; margin-bottom: 4px; }
+  .masthead h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 52px; letter-spacing: 2px; line-height: 1; color: #0a0a0a; }
+  .dateline { font-size: 11px; color: #555; margin-top: 2px; border-top: 1px solid #ccc; padding-top: 4px; }
+  .search-bar { display: flex; justify-content: center; padding: 10px 24px; background: #faf7f0; border-bottom: 2px solid #1a1a1a; }
+  .search-inner { display: flex; width: 100%; max-width: 600px; border: 1.5px solid #1a1a1a; background: #fff; }
+  .search-inner input { flex: 1; padding: 8px 12px; font-size: 14px; border: none; outline: none; background: transparent; }
+  .search-inner button { padding: 8px 16px; background: #1a1a1a; color: #f5f0e8; border: none; cursor: pointer; font-size: 13px; }
+  .search-inner button:hover { background: #333; }
+  .ticker-bar { background: #1a1a1a; color: #f5f0e8; padding: 6px 0; overflow: hidden; white-space: nowrap; border-bottom: 2px solid #444; }
+  .ticker-inner { display: inline-block; animation: ticker 50s linear infinite; font-size: 12px; padding-left: 100%; }
+  @keyframes ticker { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+  .tick-item { display: inline-block; margin-right: 40px; }
+  .tick-up { color: #7fd97f; } .tick-down { color: #f78080; } .tick-label { color: #bbb; margin-right: 5px; }
+  .main-container { max-width: 1200px; margin: 0 auto; padding: 0 16px; }
+  .top-row { display: grid; grid-template-columns: 1fr 2fr; border-bottom: 2px solid #1a1a1a; }
+  .weather-box { border-right: 2px solid #1a1a1a; padding: 16px; }
+  .markets-box { padding: 16px; }
+  .section-label { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #666; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin-bottom: 10px; }
+  .weather-main { display: flex; align-items: center; gap: 12px; }
+  .weather-icon { font-size: 40px; } .weather-temp { font-size: 36px; font-weight: 700; } .weather-desc { font-size: 13px; color: #444; }
+  .weather-details { display: flex; gap: 12px; margin-top: 8px; font-size: 11px; color: #666; }
+  .markets-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 4px; }
+  .market-card { background: #fff; border: 1px solid #ccc; padding: 8px 10px; text-align: center; }
+  .market-name { font-size: 10px; color: #666; margin-bottom: 2px; } .market-val { font-size: 15px; font-weight: 700; } .market-chg { font-size: 11px; }
+  .up { color: #c0392b; } .down { color: #2471a3; }
+  .markets-subtitle { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #888; margin-top: 10px; margin-bottom: 4px; border-top: 1px solid #ccc; padding-top: 6px; }
+  .news-section { padding: 16px 0; }
+  .news-tabs { display: flex; border-bottom: 2px solid #1a1a1a; }
+  .tab-btn { padding: 8px 18px; border: none; background: none; cursor: pointer; font-size: 13px; color: #555; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+  .tab-btn.active { color: #1a1a1a; font-weight: 700; border-bottom: 3px solid #1a1a1a; }
+  .tab-btn:hover { color: #1a1a1a; }
+  .news-content { padding: 16px 0; }
+  .news-loading { text-align: center; padding: 40px; color: #888; font-size: 13px; }
+  .news-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .news-card { padding: 12px 16px; border-right: 1px solid #ccc; border-bottom: 1px solid #ccc; }
+  .news-card:nth-child(3n) { border-right: none; }
+  .news-source { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .news-title { font-size: 14px; font-weight: 700; line-height: 1.4; margin-bottom: 6px; }
+  .news-title a { color: inherit; text-decoration: none; } .news-title a:hover { text-decoration: underline; }
+  .news-summary { font-size: 12px; color: #555; line-height: 1.5; } .news-time { font-size: 10px; color: #aaa; margin-top: 6px; }
+  .refresh-btn { float: right; font-size: 11px; color: #888; background: none; border: 1px solid #ccc; padding: 3px 8px; cursor: pointer; margin-top: -2px; }
+  .refresh-btn:hover { color: #1a1a1a; border-color: #1a1a1a; }
+  .tag { display: inline-block; font-size: 10px; background: #1a1a1a; color: #fff; padding: 1px 5px; margin-bottom: 4px; }
+  footer { text-align: center; padding: 16px; font-size: 11px; color: #aaa; border-top: 2px double #1a1a1a; margin-top: 8px; }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #1a1a1a; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="masthead">
+  <div class="masthead-top">
+    <span id="clock">00:00:00</span>
+    <span>나의 시작 페이지</span>
+    <span id="today-date"></span>
+  </div>
+  <h1>THE DAILY BRIEF</h1>
+  <div class="dateline">서울특별시 | 매일 아침 당신을 위한 브리핑</div>
+</div>
+<div class="search-bar">
+  <div class="search-inner">
+    <input type="text" id="search-input" placeholder="검색어를 입력하세요..." onkeydown="if(event.key==='Enter')doSearch()">
+    <button onclick="doSearch()">검색</button>
+  </div>
+</div>
+<div class="ticker-bar">
+  <div class="ticker-inner" id="ticker-content"><span class="tick-item"><span class="tick-label">로딩 중...</span></span></div>
+</div>
+<div class="main-container">
+  <div class="top-row">
+    <div class="weather-box">
+      <div class="section-label">오늘의 날씨 · 서울</div>
+      <div id="weather-content"><div class="news-loading"><span class="spinner"></span>날씨 불러오는 중...</div></div>
+    </div>
+    <div class="markets-box">
+      <div class="section-label">시장 현황</div>
+      <div id="market-content"><div class="news-loading"><span class="spinner"></span>시장 데이터 불러오는 중...</div></div>
+    </div>
+  </div>
+  <div class="news-section">
+    <div class="news-tabs">
+      <button class="tab-btn active" onclick="switchTab(this,'all')">종합</button>
+      <button class="tab-btn" onclick="switchTab(this,'tech')">기술/IT</button>
+      <button class="tab-btn" onclick="switchTab(this,'economy')">경제/비즈니스</button>
+      <button class="tab-btn" onclick="switchTab(this,'sports')">스포츠</button>
+      <button class="refresh-btn" onclick="loadNews(currentTab)">↻ 새로고침</button>
+    </div>
+    <div class="news-content" id="news-content">
+      <div class="news-loading"><span class="spinner"></span>뉴스를 불러오는 중...</div>
+    </div>
+  </div>
+</div>
+<footer>날씨: Open-Meteo · 환율: Frankfurter API · 뉴스: 샘플 데이터 · 투자 참고용으로만 활용하세요</footer>
+<script>
+function updateClock() {
+  const now = new Date(), pad = n => String(n).padStart(2,'0');
+  document.getElementById('clock').textContent = pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+  const days=['일','월','화','수','목','금','토'];
+  document.getElementById('today-date').textContent = now.getFullYear()+'년 '+(now.getMonth()+1)+'월 '+now.getDate()+'일 ('+days[now.getDay()]+')';
+}
+setInterval(updateClock,1000); updateClock();
+
+function doSearch() {
+  const q = document.getElementById('search-input').value.trim();
+  if(q) window.open('https://www.google.com/search?q='+encodeURIComponent(q),'_blank');
+}
+
+const WMO = {0:'☀️ 맑음',1:'🌤️ 대체로 맑음',2:'⛅ 구름 조금',3:'☁️ 흐림',45:'🌫️ 안개',48:'🌫️ 짙은 안개',51:'🌦️ 이슬비',53:'🌦️ 이슬비',55:'🌧️ 이슬비',61:'🌧️ 비',63:'🌧️ 비',65:'🌧️ 강한 비',71:'❄️ 눈',73:'❄️ 눈',75:'❄️ 폭설',80:'🌦️ 소나기',81:'🌧️ 소나기',82:'⛈️ 강한 소나기',95:'⛈️ 천둥번개',96:'⛈️ 우박',99:'⛈️ 심한 우박'};
+
+async function loadWeather() {
+  try {
+    const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=37.57&longitude=126.98&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weathercode&wind_speed_unit=ms&timezone=Asia%2FSeoul');
+    const d = await r.json(), c = d.current;
+    const desc = WMO[c.weathercode]||'🌡️ -', icon = desc.split(' ')[0], label = desc.split(' ').slice(1).join(' ');
+    document.getElementById('weather-content').innerHTML =
+      '<div class="weather-main"><div class="weather-icon">'+icon+'</div><div><div class="weather-temp">'+Math.round(c.temperature_2m)+'°C</div><div class="weather-desc">'+label+'</div></div></div>' +
+      '<div class="weather-details"><span>체감 '+Math.round(c.apparent_temperature)+'°C</span><span>습도 '+c.relative_humidity_2m+'%</span><span>바람 '+c.wind_speed_10m+'m/s</span></div>';
+  } catch(e) {
+    document.getElementById('weather-content').innerHTML = '<div class="news-loading">날씨를 불러올 수 없습니다.</div>';
+  }
+}
+
+async function loadMarkets() {
+  try {
+    const [r1,r2,r3] = await Promise.all([
+      fetch('https://api.frankfurter.dev/v2/rates?base=USD&quotes=KRW'),
+      fetch('https://api.frankfurter.dev/v2/rates?base=EUR&quotes=KRW'),
+      fetch('https://api.frankfurter.dev/v2/rates?base=JPY&quotes=KRW')
+    ]);
+    const [d1,d2,d3] = await Promise.all([r1.json(),r2.json(),r3.json()]);
+    const fx = [
+      {name:'USD/KRW', val:d1.rates.KRW.toFixed(0)},
+      {name:'EUR/KRW', val:d2.rates.KRW.toFixed(0)},
+      {name:'JPY/KRW(100)', val:(d3.rates.KRW*100).toFixed(2)}
+    ];
+    // new frankfurter.dev returns { rates: { KRW: ... } }
+    const fxCard = f => '<div class="market-card"><div class="market-name">'+f.name+'</div><div class="market-val">'+f.val+'</div><div class="market-chg" style="color:#888">실시간</div></div>';
+    const dash = '<div class="market-card"><div class="market-name">—</div><div class="market-val">—</div><div class="market-chg" style="color:#bbb">별도 API 필요</div></div>';
+    const tickHtml = fx.map(f=>'<span class="tick-item"><span class="tick-label">'+f.name+'</span><span>'+f.val+'</span></span>').join('');
+    document.getElementById('ticker-content').innerHTML = tickHtml+tickHtml;
+    document.getElementById('market-content').innerHTML =
+      '<div class="markets-subtitle">🇺🇸 미국 증시</div><div class="markets-grid">'+dash+dash+dash+'</div>' +
+      '<div class="markets-subtitle">🇰🇷 국내 증시</div><div class="markets-grid">'+dash+dash+'</div>' +
+      '<div class="markets-subtitle">💱 실시간 환율</div><div class="markets-grid">'+fx.map(fxCard).join('')+'</div>';
+  } catch(e) {
+    document.getElementById('market-content').innerHTML = '<div class="news-loading">시장 데이터를 불러올 수 없습니다.</div>';
+  }
+}
+
+let currentTab = 'all';
+const NEWS_DB = {
+  all: [
+    {title:'삼성전자, 3나노 GAA 2세대 공정 양산 돌입',summary:'삼성전자가 3나노 GAA 2세대 공정 양산을 시작했다. 전력 효율이 이전 세대 대비 15% 향상됐다.',source:'연합뉴스',time:'2시간 전',url:'https://www.yna.co.kr',tag:'산업'},
+    {title:'한국은행, 기준금리 동결 결정',summary:'한국은행 금융통화위원회가 기준금리를 현 수준에서 동결했다. 대내외 경기 불확실성을 주요 이유로 꼽았다.',source:'한국경제',time:'3시간 전',url:'https://www.hankyung.com',tag:'경제'},
+    {title:'서울시, 2030년까지 전기버스 100% 전환 계획',summary:'서울시가 2030년까지 시내버스를 전기버스로 완전 전환하는 로드맵을 공개했다. 총 예산 2조원 규모.',source:'서울신문',time:'4시간 전',url:'https://www.seoul.co.kr',tag:'사회'},
+    {title:'네이버, AI 검색 "하이퍼클로바X 서치" 출시',summary:'네이버가 대화형 AI 검색 서비스를 정식 출시했다. 맥락을 이해해 답변을 생성하는 방식이다.',source:'조선일보',time:'5시간 전',url:'https://www.chosun.com',tag:'IT'},
+    {title:'국내 소비자물가 상승률 2%대 안정세 유지',summary:'통계청 발표에 따르면 소비자물가 상승률이 2%대를 유지하며 안정세를 보이고 있다.',source:'뉴시스',time:'6시간 전',url:'https://www.newsis.com',tag:'경제'},
+    {title:'기아, 전기 픽업트럭 "EV9 GT" 북미 출시 확정',summary:'기아가 EV9 기반 고성능 픽업트럭을 북미 시장에 출시할 예정이다. 최고출력 600마력 목표.',source:'매일경제',time:'7시간 전',url:'https://www.mk.co.kr',tag:'산업'}
+  ],
+  tech: [
+    {title:'애플, WWDC에서 "애플 인텔리전스 2.0" 공개',summary:'애플이 온디바이스 AI를 대폭 강화한 새 OS를 발표했다.',source:'The Verge',time:'1시간 전',url:'https://www.theverge.com',tag:'AI'},
+    {title:'구글 딥마인드, 알파폴드 3 성능 20% 개선',summary:'딥마인드가 알파폴드 3의 정확도를 향상시킨 업데이트를 발표했다. 신약 개발에 활용 기대.',source:'Nature',time:'2시간 전',url:'https://www.nature.com',tag:'AI'},
+    {title:'SK하이닉스, HBM4 양산 6개월 앞당겨',summary:'SK하이닉스가 HBM4 메모리 양산 시점을 당초 계획보다 앞당긴다고 밝혔다.',source:'전자신문',time:'3시간 전',url:'https://www.etnews.com',tag:'반도체'},
+    {title:'카카오, 멀티모달 AI "카나나" 오픈베타 시작',summary:'카카오가 이미지·텍스트를 동시에 처리하는 자체 AI 모델 오픈베타를 시작했다.',source:'ZDNet Korea',time:'4시간 전',url:'https://zdnet.co.kr',tag:'AI'},
+    {title:'메타, AR 글래스 "오리온 2세대" 2026년 출시',summary:'메타가 차세대 AR 글래스를 공개했다. 시야각이 1세대 대비 두 배 넓어졌다.',source:'Engadget',time:'5시간 전',url:'https://www.engadget.com',tag:'AR/VR'},
+    {title:'퓨리오사AI, 차세대 NPU 칩 공개',summary:'국내 AI 반도체 스타트업이 추론 성능을 3배 높인 2세대 NPU를 발표했다.',source:'한국경제',time:'6시간 전',url:'https://www.hankyung.com',tag:'반도체'}
+  ],
+  economy: [
+    {title:'코스피, 외국인 순매수에 2,680 돌파',summary:'코스피가 외국인 투자자의 대규모 순매수에 힘입어 2,680선을 돌파했다.',source:'한국경제',time:'1시간 전',url:'https://www.hankyung.com',tag:'증시'},
+    {title:'원·달러 환율 1,370원대로 하락',summary:'원·달러 환율이 달러 약세 기조에 1,370원대로 내려앉았다.',source:'연합뉴스',time:'2시간 전',url:'https://www.yna.co.kr',tag:'환율'},
+    {title:'현대차그룹, 미국 공장 추가 투자 3조원',summary:'현대차그룹이 미국 조지아 전기차 공장에 3조원을 추가 투자한다고 밝혔다.',source:'매일경제',time:'3시간 전',url:'https://www.mk.co.kr',tag:'기업'},
+    {title:'국내 수출, 반도체 호조로 12% 증가',summary:'반도체 수출 호조로 전체 수출이 전년 동기 대비 12% 증가했다.',source:'산업부',time:'4시간 전',url:'https://www.motie.go.kr',tag:'수출'},
+    {title:'한국 GDP 성장률 2.4%…OECD 전망치 상회',summary:'OECD가 한국의 올해 GDP 성장률 전망을 2.4%로 상향했다.',source:'기획재정부',time:'5시간 전',url:'https://www.moef.go.kr',tag:'거시경제'},
+    {title:'서울 아파트 거래량 3개월 연속 증가',summary:'서울 아파트 매매 거래량이 3개월 연속 증가세를 보이고 있다.',source:'부동산114',time:'6시간 전',url:'https://www.r114.com',tag:'부동산'}
+  ],
+  sports: [
+    {title:'손흥민, 토트넘 시즌 15호골',summary:'손흥민이 이번 시즌 리그 15호골을 기록하며 프리미어리그 득점 순위 5위에 올랐다.',source:'스포츠조선',time:'2시간 전',url:'https://sports.chosun.com',tag:'축구'},
+    {title:'삼성 라이온즈 8연승…선두 굳히기',summary:'삼성 라이온즈가 8연승을 달리며 KBO 리그 선두 자리를 굳히고 있다.',source:'OSEN',time:'3시간 전',url:'https://www.osen.co.kr',tag:'야구'},
+    {title:'LA 올림픽 국가대표 선발전 일정 공개',summary:'대한체육회가 2028 LA 올림픽을 향한 국가대표 선발전 일정을 종목별로 공개했다.',source:'연합뉴스',time:'4시간 전',url:'https://www.yna.co.kr',tag:'올림픽'},
+    {title:'정현, ATP 투어 복귀 후 첫 16강 진출',summary:'테니스 정현이 부상 복귀 후 출전한 ATP 투어 대회에서 16강에 진출했다.',source:'스포츠서울',time:'5시간 전',url:'https://www.sportsseoul.com',tag:'테니스'},
+    {title:'현대모비스 피버스, 챔피언결정전 3연승',summary:'프로농구 현대모비스 피버스가 챔피언결정전에서 3연승을 거두며 우승에 한 걸음 다가섰다.',source:'KBL',time:'6시간 전',url:'https://www.kbl.or.kr',tag:'농구'},
+    {title:'류현진, 스프링캠프 복귀 등판',summary:'류현진이 스프링캠프에서 등판해 구위 회복을 확인했다.',source:'SPOTV',time:'7시간 전',url:'https://www.spotv.net',tag:'야구'}
+  ]
+};
+
+function switchTab(btn, tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentTab = tab;
+  loadNews(tab);
+}
+
+function loadNews(tab) {
+  const news = NEWS_DB[tab] || NEWS_DB.all;
+  document.getElementById('news-content').innerHTML = '<div class="news-grid">' +
+    news.map(n =>
+      '<div class="news-card">' +
+      '<div class="news-source"><span class="tag">'+n.tag+'</span> '+n.source+'</div>' +
+      '<div class="news-title"><a href="'+n.url+'" target="_blank">'+n.title+'</a></div>' +
+      '<div class="news-summary">'+n.summary+'</div>' +
+      '<div class="news-time">'+n.time+'</div>' +
+      '</div>'
+    ).join('') + '</div>';
+}
+
+loadWeather();
+loadMarkets();
+loadNews('all');
+</script>
+</body>
+</html>

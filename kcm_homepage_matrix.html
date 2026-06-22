@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CHULMIN's Today</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      font-family: 'Share Tech Mono', 'Courier New', monospace;
+      color: #00cc33;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Full-page matrix canvas */
+    #bg-canvas {
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none;
+    }
+
+    /* CRT scanline overlay */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 1;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.18) 2px,
+        rgba(0,0,0,0.18) 4px
+      );
+    }
+
+    /* CRT vignette */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 1;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+    }
+
+    .wrap {
+      position: relative; z-index: 2;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 32px 0 40px;
+    }
+
+    /* ── Logo ── */
+    .logo-wrap {
+      position: relative;
+      width: min(520px, 90vw);
+      height: 224px;
+      margin-bottom: 20px;
+      border: none;
+      background: transparent;
+      overflow: hidden;
+    }
+    #logo-canvas { display: none; }
+    /* scanlines over logo */
+    .logo-wrap::after {
+      content: '';
+      position: absolute; inset: 0; z-index: 4; pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.38) 0px,
+        rgba(0,0,0,0.38) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+    }
+    .logo {
+      position: relative; z-index: 2;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 1.05rem; font-weight: 400; letter-spacing: 3px;
+      transform: scaleY(2);
+      transform-origin: center center;
+      -webkit-text-stroke: 2px #00b32e;
+      paint-order: stroke fill;
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: transparent;
+      gap: 0;
+      image-rendering: pixelated;
+    }
+    .logo-char {
+      display: inline-block;
+      color: #00b32e;
+      text-shadow: 0 0 5px #00b32e, 0 0 12px #008822;
+      transition: none;
+      position: relative;
+    }
+    /* noise canvas sits inside logo-wrap */
+    #noise-canvas {
+      position: absolute; inset: 0; z-index: 3;
+      pointer-events: none;
+      opacity: 0;
+    }
+
+    /* ── Search ── */
+    .search-row { width: min(560px, 94vw); position: relative; margin-bottom: 14px; }
+    .search-row input {
+      width: 100%; padding: 10px 46px 10px 16px;
+      border: 1px solid #00aa22; border-radius: 2px;
+      font-size: .9rem; font-family: 'Share Tech Mono', monospace;
+      color: #00ff41; background: rgba(0,10,0,0.85); outline: none;
+      box-shadow: 0 0 8px rgba(0,255,65,.15), inset 0 0 8px rgba(0,0,0,.5);
+      caret-color: #00ff41;
+    }
+    .search-row input::placeholder { color: #007722; }
+    .search-row input:focus { border-color: #00ff41; box-shadow: 0 0 14px rgba(0,255,65,.35); }
+    .search-row button {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; color: #00aa22; display: flex; padding: 4px;
+    }
+    .search-row button:hover { color: #00ff41; }
+
+    /* ── Quick links ── */
+    .quicklinks { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 20px; width: min(680px, 96vw); }
+    .ql {
+      display: flex; align-items: center; gap: 5px; padding: 4px 12px;
+      background: rgba(0,10,0,0.8); border: 1px solid #004d00;
+      border-radius: 2px; font-size: .72rem; font-weight: 600;
+      font-family: 'Share Tech Mono', monospace;
+      color: #00cc33; text-decoration: none;
+      transition: all .15s;
+    }
+    .ql:hover { border-color: #00ff41; color: #00ff41; box-shadow: 0 0 8px rgba(0,255,65,.3); background: rgba(0,30,0,0.9); }
+
+    /* ── Layout ── */
+    .row { width: min(980px, 96vw); display: grid; gap: 12px; margin-bottom: 12px; }
+    .row-3 { grid-template-columns: repeat(3,1fr); }
+    .row-2 { grid-template-columns: repeat(2,1fr); }
+    .row-1 { grid-template-columns: 1fr; }
+    @media(max-width:720px){ .row-3,.row-2 { grid-template-columns: 1fr; } }
+
+    /* ── Card ── */
+    .card {
+      background: rgba(0,8,0,0.82);
+      border: 1px solid #004d00;
+      border-radius: 2px; padding: 16px;
+      display: flex; flex-direction: column;
+      box-shadow: 0 0 12px rgba(0,255,65,.08), inset 0 0 20px rgba(0,0,0,.4);
+      transition: box-shadow .2s, border-color .2s;
+    }
+    .card:hover { border-color: #00aa22; box-shadow: 0 0 18px rgba(0,255,65,.18); }
+
+    .card-label {
+      font-size: .68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .12em; color: #007722; margin-bottom: 12px;
+      display: flex; align-items: center; gap: 6px;
+      font-family: 'Share Tech Mono', monospace;
+      border-bottom: 1px solid #002200; padding-bottom: 6px;
+    }
+    .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; background: #00ff41; box-shadow: 0 0 4px #00ff41; }
+
+    .dt-time {
+      font-family: 'Press Start 2P', monospace; font-size: 1.6rem; color: #00b32e;
+      text-shadow: 0 0 5px #00b32e, 0 0 12px #008822; line-height: 1.4;
+      position: relative; display: inline-block;
+      image-rendering: pixelated;
+      -webkit-text-stroke: 2px #00b32e;
+      paint-order: stroke fill;
+    }
+    .dt-time::after, .w-temp::after {
+      content: '';
+      position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.35) 0px, rgba(0,0,0,0.35) 1px,
+        transparent 1px, transparent 3px
+      );
+    }
+    .dt-sec { font-size: .9rem; color: #006611; font-family: 'Press Start 2P', monospace; }
+    .dt-date { margin-top: 10px; font-size: .58rem; color: #008822; font-family: 'Share Tech Mono', monospace; }
+    .dt-badges { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      display: inline-block; padding: 2px 10px; border: 1px solid #004d00;
+      border-radius: 2px; font-size: .55rem; font-family: 'Share Tech Mono', monospace;
+      color: #009922; background: rgba(0,20,0,.8);
+    }
+    .week-progress { margin-top: 10px; }
+    .week-label { font-size: .62rem; color: #006611; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .progress-bar { height: 4px; background: #001a00; border: 1px solid #003300; }
+    .progress-fill { height: 100%; background: #00ff41; box-shadow: 0 0 6px #00ff41; transition: width .8s ease; }
+
+    /* ── Weather ── */
+    .city-sel {
+      width: 100%; padding: 6px 10px; border: 1px solid #004d00; border-radius: 2px;
+      font-size: .8rem; font-family: 'Share Tech Mono', monospace;
+      background: rgba(0,8,0,.9); color: #00cc33; margin-bottom: 10px; cursor: pointer; outline: none;
+    }
+    .city-sel option { background: #000; color: #00cc33; }
+    .w-main { display: flex; align-items: center; gap: 10px; }
+    .w-icon { font-size: 2rem; line-height: 1; filter: saturate(0) brightness(1.5) sepia(1) hue-rotate(80deg); }
+    .w-temp {
+      font-family: 'Press Start 2P', monospace; font-size: 1.5rem; color: #00b32e;
+      text-shadow: 0 0 5px #00b32e, 0 0 12px #008822;
+      position: relative; display: inline-block;
+      image-rendering: pixelated; line-height: 1.4;
+      -webkit-text-stroke: 2px #00b32e;
+      paint-order: stroke fill;
+    }
+    .w-unit { font-size: .9rem; color: #007722; }
+    .w-desc { margin-top: 4px; font-size: .78rem; color: #009922; }
+    .w-meta { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: .72rem; color: #007722; }
+    .w-meta strong { color: #00cc33; }
+    .w-src { margin-top: 6px; font-size: .58rem; color: #004d00; }
+
+    /* ── Bookmarks ── */
+    .bookmark-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; }
+    .bm {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      text-decoration: none; color: #009922; padding: 8px 4px;
+      border: 1px solid transparent; border-radius: 2px;
+      transition: all .12s; font-size: .68rem; font-family: 'Share Tech Mono', monospace; text-align: center;
+    }
+    .bm:hover { border-color: #00aa22; color: #00ff41; background: rgba(0,30,0,.6); box-shadow: 0 0 6px rgba(0,255,65,.2); }
+    .bm-icon { font-size: 1.3rem; filter: saturate(0) brightness(1.2) sepia(1) hue-rotate(80deg); }
+
+    /* ── Todo ── */
+    .todo-input-row { display: flex; gap: 6px; margin-bottom: 10px; }
+    .todo-input {
+      flex: 1; padding: 7px 10px; border: 1px solid #004d00; border-radius: 2px;
+      font-size: .8rem; font-family: 'Share Tech Mono', monospace; outline: none;
+      background: rgba(0,8,0,.9); color: #00ff41; caret-color: #00ff41;
+    }
+    .todo-input::placeholder { color: #004d00; }
+    .todo-input:focus { border-color: #00aa22; box-shadow: 0 0 8px rgba(0,255,65,.2); }
+    .todo-add-btn {
+      padding: 7px 12px; background: rgba(0,60,0,.8); color: #00ff41;
+      border: 1px solid #00aa22; border-radius: 2px;
+      font-size: .78rem; font-family: 'Share Tech Mono', monospace; cursor: pointer;
+    }
+    .todo-add-btn:hover { background: rgba(0,100,0,.8); box-shadow: 0 0 8px rgba(0,255,65,.3); }
+    .todo-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; max-height: 200px; flex: 1; }
+    .todo-item { display: flex; align-items: center; gap: 8px; padding: 6px 6px; border-radius: 2px; border-bottom: 1px solid #001a00; }
+    .todo-item:hover { background: rgba(0,20,0,.6); }
+    .todo-cb { width: 14px; height: 14px; accent-color: #00ff41; cursor: pointer; flex-shrink: 0; }
+    .todo-text { flex: 1; font-size: .8rem; color: #00cc33; font-family: 'Share Tech Mono', monospace; word-break: break-all; }
+    .todo-text.done { text-decoration: line-through; color: #004d00; }
+    .todo-del { background: none; border: none; cursor: pointer; color: #004d00; font-size: .9rem; padding: 2px 4px; font-family: monospace; }
+    .todo-del:hover { color: #00ff41; }
+    .todo-footer { margin-top: 8px; font-size: .62rem; color: #006611; display: flex; justify-content: space-between; font-family: 'Share Tech Mono', monospace; }
+
+    /* ── Memo ── */
+    .memo-area {
+      flex: 1; border: none; outline: none; resize: none;
+      font-family: 'Share Tech Mono', monospace; font-size: .8rem;
+      color: #00cc33; background: transparent; line-height: 1.7; width: 100%; min-height: 200px;
+      caret-color: #00ff41;
+    }
+    .memo-area::placeholder { color: #004d00; }
+    .memo-footer { font-size: .6rem; color: #004d00; margin-top: 6px; font-family: 'Share Tech Mono', monospace; }
+
+    /* ── News ── */
+    .news-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 0 20px; }
+    @media(max-width:720px){ .news-grid { grid-template-columns: 1fr; } }
+    .news-item {
+      padding: 8px 4px; border-bottom: 1px solid #001a00;
+      display: flex; align-items: center; gap: 8px;
+      text-decoration: none; color: #009922;
+      transition: all .12s;
+    }
+    .news-item:hover { color: #00ff41; background: rgba(0,20,0,.5); padding-left: 8px; }
+    .news-item:last-child { border-bottom: none; }
+    .news-name { font-size: .8rem; font-weight: 700; font-family: 'Share Tech Mono', monospace; }
+    .news-desc { font-size: .64rem; color: #006611; margin-top: 1px; font-family: 'Share Tech Mono', monospace; }
+
+    /* ── Spinner ── */
+    .spinner { width: 20px; height: 20px; border: 2px solid #002200; border-top-color: #00ff41; border-radius: 50%; animation: spin .7s linear infinite; margin: 20px auto; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Footer ── */
+    .footer { margin-top: 10px; font-size: .65rem; color: #004d00; letter-spacing: .1em; font-family: 'Share Tech Mono', monospace; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #000; }
+    ::-webkit-scrollbar-thumb { background: #004d00; }
+    ::-webkit-scrollbar-thumb:hover { background: #00aa22; }
+  </style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div class="wrap">
+
+  <!-- Logo -->
+  <div class="logo-wrap">
+    <canvas id="logo-canvas"></canvas>
+    <div class="logo" id="logo"></div>
+    <canvas id="noise-canvas"></canvas>
+  </div>
+
+  <!-- Search -->
+  <div class="search-row">
+    <input type="text" id="q" placeholder="> SEARCH OR ENTER URL_"/>
+    <button id="search-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Quick links -->
+  <div class="quicklinks">
+    <a class="ql" href="https://www.youtube.com" target="_blank">[YT]</a>
+    <a class="ql" href="https://www.naver.com" target="_blank">[NAVER]</a>
+    <a class="ql" href="https://www.github.com" target="_blank">[GITHUB]</a>
+    <a class="ql" href="https://mail.google.com" target="_blank">[GMAIL]</a>
+    <a class="ql" href="https://chat.openai.com" target="_blank">[GPT]</a>
+    <a class="ql" href="https://claude.ai" target="_blank">[CLAUDE]</a>
+    <a class="ql" href="https://www.reddit.com" target="_blank">[REDDIT]</a>
+    <a class="ql" href="https://twitter.com" target="_blank">[X]</a>
+  </div>
+
+  <!-- Row 1: Clock | Weather | Bookmarks -->
+  <div class="row row-3">
+
+    <div class="card">
+      <div class="card-label"><span class="dot"></span>// DATE &amp; TIME</div>
+      <div class="dt-time"><span id="dh">--</span>:<span id="dm">--</span><span class="dt-sec">:<span id="ds">--</span></span></div>
+      <div class="dt-date" id="dd">--</div>
+      <div class="dt-badges">
+        <span class="badge" id="dw">--</span>
+        <span class="badge" id="d-week">--</span>
+        <span class="badge" id="d-doy">--</span>
+      </div>
+      <div class="week-progress">
+        <div class="week-label"><span>// WEEK PROGRESS</span><span id="week-pct">0%</span></div>
+        <div class="progress-bar"><div class="progress-fill" id="week-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span class="dot"></span>// WEATHER</div>
+      <select class="city-sel" id="city-sel"></select>
+      <div id="w-content"><div class="spinner"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span class="dot"></span>// BOOKMARKS</div>
+      <div class="bookmark-grid">
+        <a class="bm" href="https://www.figma.com" target="_blank"><span class="bm-icon">🎨</span>FIGMA</a>
+        <a class="bm" href="https://notion.so" target="_blank"><span class="bm-icon">📝</span>NOTION</a>
+        <a class="bm" href="https://www.spotify.com" target="_blank"><span class="bm-icon">🎵</span>SPOTIFY</a>
+        <a class="bm" href="https://drive.google.com" target="_blank"><span class="bm-icon">📁</span>DRIVE</a>
+        <a class="bm" href="https://calendar.google.com" target="_blank"><span class="bm-icon">📅</span>CAL</a>
+        <a class="bm" href="https://www.netflix.com" target="_blank"><span class="bm-icon">🎬</span>NETFLIX</a>
+        <a class="bm" href="https://www.amazon.com" target="_blank"><span class="bm-icon">📦</span>AMAZON</a>
+        <a class="bm" href="https://stackoverflow.com" target="_blank"><span class="bm-icon">💬</span>STACK</a>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Row 2: Todo | Memo | News -->
+  <div class="row row-3">
+
+    <div class="card">
+      <div class="card-label">
+        <span class="dot"></span>// TODAY'S TO-DO
+        <span id="todo-badge" style="margin-left:auto;border:1px solid #00aa22;color:#00ff41;padding:1px 8px;font-size:.6rem;"></span>
+      </div>
+      <div class="todo-input-row">
+        <input class="todo-input" id="todo-input" placeholder="> ADD TASK_" maxlength="80"/>
+        <button class="todo-add-btn" id="todo-add-btn">+ADD</button>
+      </div>
+      <div class="todo-list" id="todo-list"></div>
+      <div class="todo-footer">
+        <span id="todo-summary">0 DONE / 0 TOTAL</span>
+        <span style="cursor:pointer;color:#00aa22;" onclick="clearDone()">[CLR DONE]</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span class="dot"></span>// QUICK MEMO</div>
+      <textarea class="memo-area" id="memo" placeholder="> TYPE HERE_"></textarea>
+      <div class="memo-footer" id="memo-cnt">0 CHARS</div>
+    </div>
+
+    <div class="card">
+      <div class="card-label"><span class="dot"></span>// TECH &amp; IT NEWS</div>
+      <div id="news-list"></div>
+    </div>
+
+  </div>
+
+  <div class="footer">&gt; CHULMIN'S TODAY _ SYSTEM ONLINE</div>
+</div>
+
+<script>
+/* ── Full-page Matrix rain ── */
+const bgCanvas=document.getElementById('bg-canvas');
+const bgCtx=bgCanvas.getContext('2d');
+function resizeBg(){
+  bgCanvas.width=window.innerWidth;
+  bgCanvas.height=window.innerHeight;
+}
+resizeBg();
+window.addEventListener('resize',resizeBg);
+
+const CHARS='アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%&';
+const FS=6; // font size — 50% of original 13px
+let bgCols=Math.floor(bgCanvas.width/FS);
+let bgDrops=Array.from({length:bgCols},()=>-Math.floor(Math.random()*80));
+
+function drawBg(){
+  bgCtx.fillStyle='rgba(0,0,0,0.04)';
+  bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height);
+  bgCtx.font=`${FS}px monospace`;
+  for(let i=0;i<bgDrops.length;i++){
+    const y=bgDrops[i]*FS;
+    bgCtx.fillStyle='#afffaf';
+    bgCtx.fillText(CHARS[Math.floor(Math.random()*CHARS.length)],i*FS,y);
+    bgCtx.fillStyle='#008822';
+    bgCtx.fillText(CHARS[Math.floor(Math.random()*CHARS.length)],i*FS,y-FS);
+    if(y>bgCanvas.height&&Math.random()>.975) bgDrops[i]=0;
+    bgDrops[i]++;
+  }
+}
+setInterval(drawBg,40);
+
+/* ── Logo canvas rain ── */
+const lc=document.getElementById('logo-canvas');
+const lCtx=lc.getContext('2d');
+function resizeLogo(){lc.width=lc.offsetWidth;lc.height=lc.offsetHeight;}
+resizeLogo();
+const LFS=6;
+let lCols=Math.floor(lc.width/LFS);
+let lDrops=Array.from({length:lCols},()=>-Math.floor(Math.random()*20));
+function drawLogo(){
+  lCtx.fillStyle='rgba(0,0,0,0.06)';
+  lCtx.fillRect(0,0,lc.width,lc.height);
+  lCtx.font=`${LFS}px monospace`;
+  for(let i=0;i<lDrops.length;i++){
+    const y=lDrops[i]*LFS;
+    lCtx.fillStyle='#00ff41';
+    lCtx.fillText(CHARS[Math.floor(Math.random()*CHARS.length)],i*LFS,y);
+    lCtx.fillStyle='#004400';
+    lCtx.fillText(CHARS[Math.floor(Math.random()*CHARS.length)],i*LFS,y-LFS);
+    if(y>lc.height&&Math.random()>.97) lDrops[i]=0;
+    lDrops[i]++;
+  }
+}
+setInterval(drawLogo,45);
+
+/* ── Logo glitch — noise overlay style ── */
+const logoEl = document.getElementById('logo');
+const TITLE = "CHULMIN's Today";
+
+// Build spans
+const charSpans = [];
+TITLE.split('').forEach(ch => {
+  const s = document.createElement('span');
+  s.className = 'logo-char';
+  s.textContent = ch;
+  s.dataset.original = ch;
+  logoEl.appendChild(s);
+  charSpans.push(s);
+});
+
+/* ── Noise canvas ── */
+const noiseCanvas = document.getElementById('noise-canvas');
+const nCtx = noiseCanvas.getContext('2d');
+const logoWrap = document.querySelector('.logo-wrap');
+
+function resizeNoise() {
+  const w = logoWrap.offsetWidth;
+  const h = logoWrap.offsetHeight;
+  if (w > 0 && h > 0) {
+    noiseCanvas.width  = w;
+    noiseCanvas.height = h;
+  }
+}
+
+let noiseActive = false;
+let noiseAnim   = null;
+
+function drawNoise(intensity) {
+  const w = noiseCanvas.width, h = noiseCanvas.height;
+  nCtx.clearRect(0, 0, w, h);
+
+  // random static pixels
+  const img = nCtx.createImageData(w, h);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (Math.random() < intensity * 0.55) {
+      const v = Math.random() < 0.6 ? Math.floor(Math.random()*80+20) : 0;
+      d[i]   = 0;
+      d[i+1] = v;
+      d[i+2] = Math.floor(v * 0.3);
+      d[i+3] = Math.floor(Math.random() * 200 + 55);
+    }
+  }
+  nCtx.putImageData(img, 0, 0);
+
+  // horizontal scan-tear lines
+  const lines = Math.floor(intensity * 6);
+  for (let l = 0; l < lines; l++) {
+    const y  = Math.floor(Math.random() * h);
+    const lh = Math.floor(Math.random() * 4) + 1;
+    const shift = (Math.random() - 0.5) * 18 * intensity;
+    nCtx.save();
+    nCtx.globalAlpha = Math.random() * 0.7 * intensity + 0.1;
+    nCtx.fillStyle = Math.random() < 0.5 ? 'rgba(0,180,50,0.5)' : 'rgba(0,80,20,0.8)';
+    nCtx.fillRect(shift, y, w, lh);
+    nCtx.restore();
+  }
+}
+
+function clearNoise() {
+  nCtx.clearRect(0, 0, noiseCanvas.width, noiseCanvas.height);
+  noiseCanvas.style.opacity = '0';
+}
+
+function burstNoise(duration, intensity) {
+  noiseCanvas.style.opacity = '1';
+  noiseActive = true;
+  const start = performance.now();
+
+  function tick(now) {
+    const elapsed = now - start;
+    if (elapsed >= duration) {
+      clearNoise();
+      noiseActive = false;
+      scheduleNoiseBurst();
+      return;
+    }
+    // flicker intensity over burst
+    const t = elapsed / duration;
+    const flicker = intensity * (1 - t * 0.3) * (0.6 + Math.random() * 0.7);
+    drawNoise(flicker);
+
+    // also jitter individual chars during burst
+    charSpans.forEach(s => {
+      if (s.dataset.original === ' ') return;
+      if (Math.random() < 0.15 * intensity) {
+        const dx = (Math.random() - 0.5) * 6 * intensity;
+        const sc = 1 + (Math.random() - 0.5) * 0.3 * intensity;
+        s.style.transform = `translateX(${dx}px) scaleX(${sc})`;
+        s.style.opacity   = String(0.3 + Math.random() * 0.7);
+        s.style.color     = Math.random() < 0.2 ? '#006622' : '#00b32e';
+        s.style.textShadow = Math.random() < 0.3 ? 'none' : '0 0 5px #00b32e';
+      } else {
+        s.style.transform  = '';
+        s.style.opacity    = '1';
+        s.style.color      = '#00b32e';
+        s.style.textShadow = '0 0 5px #00b32e, 0 0 12px #008822';
+      }
+    });
+
+    noiseAnim = requestAnimationFrame(tick);
+  }
+  noiseAnim = requestAnimationFrame(tick);
+}
+
+function resetChars() {
+  charSpans.forEach(s => {
+    s.style.transform  = '';
+    s.style.opacity    = '1';
+    s.style.color      = '#00b32e';
+    s.style.textShadow = '0 0 5px #00b32e, 0 0 12px #008822';
+  });
+}
+
+function scheduleNoiseBurst() {
+  // random wait 1.5s ~ 11s between bursts
+  const wait = 1500 + Math.random() * 9500;
+  setTimeout(() => {
+    if (noiseActive) return;
+    // burst length 80ms ~ 600ms, intensity 0.4 ~ 1.0
+    const dur   = 80 + Math.random() * 520;
+    const inten = 0.4 + Math.random() * 0.6;
+    burstNoise(dur, inten);
+    // sometimes double-burst shortly after
+    if (Math.random() < 0.35) {
+      setTimeout(() => {
+        if (!noiseActive) burstNoise(40 + Math.random() * 200, inten * 0.7);
+      }, dur + 60 + Math.random() * 150);
+    }
+  }, wait);
+}
+
+resetChars();
+// Delay start until layout is fully painted
+requestAnimationFrame(() => {
+  resizeNoise();
+  scheduleNoiseBurst();
+});
+
+/* ── Clock ── */
+const WD=["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
+const MO=["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+function p(n){return String(n).padStart(2,'0');}
+function weekOfYear(d){const s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/864e5+s.getDay()+1)/7);}
+function dayOfYear(d){return Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);}
+function tick(){
+  const n=new Date();
+  document.getElementById('dh').textContent=p(n.getHours());
+  document.getElementById('dm').textContent=p(n.getMinutes());
+  document.getElementById('ds').textContent=p(n.getSeconds());
+  document.getElementById('dd').textContent=n.getFullYear()+'년 '+MO[n.getMonth()]+' '+n.getDate()+'일';
+  document.getElementById('dw').textContent=WD[n.getDay()];
+  document.getElementById('d-week').textContent=weekOfYear(n)+'주차';
+  document.getElementById('d-doy').textContent=dayOfYear(n)+'/365';
+  const wd=n.getDay();
+  const elapsed=(wd===0?6:wd-1)*86400+(n.getHours()*3600+n.getMinutes()*60+n.getSeconds());
+  const pct=Math.round(elapsed/(7*86400)*100);
+  document.getElementById('week-fill').style.width=pct+'%';
+  document.getElementById('week-pct').textContent=pct+'%';
+}
+tick(); setInterval(tick,1000);
+
+/* ── Weather ── */
+const CITIES=[
+  {name:"서울",lat:37.5665,lon:126.9780},{name:"부산",lat:35.1796,lon:129.0756},
+  {name:"대구",lat:35.8714,lon:128.6014},{name:"인천",lat:37.4563,lon:126.7052},
+  {name:"광주",lat:35.1595,lon:126.8526},{name:"대전",lat:36.3504,lon:127.3845},
+  {name:"울산",lat:35.5384,lon:129.3114},{name:"수원",lat:37.2636,lon:127.0286},
+  {name:"제주",lat:33.4996,lon:126.5312},{name:"춘천",lat:37.8813,lon:127.7300},
+  {name:"천안",lat:36.9921,lon:127.1128},{name:"전주",lat:35.8242,lon:127.1480},
+];
+const sel=document.getElementById('city-sel');
+CITIES.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent=c.name;sel.appendChild(o);});
+const WMO_T={0:"CLEAR",1:"MOSTLY CLEAR",2:"PARTLY CLOUDY",3:"OVERCAST",45:"FOG",48:"FOG",51:"LIGHT DRIZZLE",53:"DRIZZLE",55:"HEAVY DRIZZLE",61:"LIGHT RAIN",63:"RAIN",65:"HEAVY RAIN",71:"LIGHT SNOW",73:"SNOW",75:"HEAVY SNOW",80:"SHOWERS",81:"HEAVY SHOWERS",82:"TORRENTIAL",95:"THUNDERSTORM",96:"THUNDERSTORM"};
+const WMO_I={0:"☀️",1:"🌤️",2:"⛅",3:"☁️",45:"🌫️",48:"🌫️",51:"🌦️",53:"🌧️",55:"🌧️",61:"🌧️",63:"🌧️",65:"⛈️",71:"🌨️",73:"❄️",75:"❄️",80:"🌦️",81:"🌧️",82:"⛈️",95:"⛈️",96:"⛈️"};
+function loadWeather(idx){
+  const el=document.getElementById('w-content');
+  el.innerHTML='<div class="spinner"></div>';
+  const c=CITIES[idx];
+  fetch('https://api.open-meteo.com/v1/forecast?latitude='+c.lat+'&longitude='+c.lon+'&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weathercode&wind_speed_unit=kmh&timezone=Asia%2FSeoul',{mode:'cors'})
+    .then(r=>{if(!r.ok)throw 0;return r.json();})
+    .then(d=>{
+      const w=d.current,code=w.weathercode;
+      el.innerHTML='<div class="w-main"><span class="w-icon">'+(WMO_I[code]||'🌡️')+'</span>'
+        +'<span class="w-temp">'+Math.round(w.temperature_2m)+'<span class="w-unit">°C</span></span></div>'
+        +'<div class="w-desc">> '+(WMO_T[code]||'')+'</div>'
+        +'<div class="w-meta">'
+        +'<span>FEEL <strong>'+Math.round(w.apparent_temperature)+'°C</strong></span>'
+        +'<span>HUM <strong>'+w.relative_humidity_2m+'%</strong></span>'
+        +'<span>WIND <strong>'+w.wind_speed_10m+'km/h</strong></span>'
+        +'</div><div class="w-src">SRC: OPEN-METEO</div>';
+    }).catch(()=>{
+      const m=new Date().getMonth();
+      const isSummer=m>=5&&m<=8,isWinter=m>=11||m<=1;
+      const base=isSummer?28:isWinter?-2:15;
+      const off=[0,-2,-4,-1,2,5,3,-1,-3,-5,-3,0];
+      const temp=base+(off[idx]||0),code=isSummer?80:isWinter?73:1;
+      el.innerHTML='<div class="w-main"><span class="w-icon">'+(WMO_I[code]||'🌡️')+'</span>'
+        +'<span class="w-temp">'+temp+'<span class="w-unit">°C</span></span></div>'
+        +'<div class="w-desc">> '+(WMO_T[code]||'')+'</div>'
+        +'<div class="w-meta">'
+        +'<span>FEEL <strong>'+(temp-3)+'°C</strong></span>'
+        +'<span>HUM <strong>65%</strong></span>'
+        +'<span>WIND <strong>12km/h</strong></span>'
+        +'</div><div class="w-src">!! PREVIEW DATA <span style="color:#00aa22;cursor:pointer" onclick="loadWeather('+idx+')">[RETRY]</span></div>';
+    });
+}
+sel.addEventListener('change',()=>loadWeather(Number(sel.value)));
+loadWeather(0);
+
+/* ── News ── */
+const NEWS=[
+  {name:"HACKER NEWS",desc:"GLOBAL DEV & STARTUP",url:"https://news.ycombinator.com"},
+  {name:"TECHCRUNCH", desc:"STARTUP & TECH NEWS", url:"https://techcrunch.com"},
+  {name:"THE VERGE",  desc:"CONSUMER TECH & AI",  url:"https://www.theverge.com"},
+  {name:"ARS TECHNICA",desc:"IN-DEPTH TECH & SCI",url:"https://arstechnica.com"},
+  {name:"ZDNET KOREA",desc:"국내 IT & 기업 & 정책",  url:"https://zdnet.co.kr"},
+  {name:"전자신문",    desc:"국내 전자 & IT 전문",   url:"https://www.etnews.com"},
+];
+const nl=document.getElementById('news-list');
+NEWS.forEach(s=>{
+  const a=document.createElement('a');
+  a.className='news-item'; a.href=s.url; a.target='_blank'; a.rel='noopener noreferrer';
+  a.innerHTML='<span style="color:#00ff41;font-family:monospace">&gt;</span>'
+    +'<span><div class="news-name">'+s.name+'</div><div class="news-desc">'+s.desc+'</div></span>';
+  nl.appendChild(a);
+});
+
+/* ── Search ── */
+function goSearch(){
+  const v=document.getElementById('q').value.trim(); if(!v)return;
+  const url=/^https?:\/\//i.test(v)?v:/^[\w-]+\.\w{2,}/.test(v)?'https://'+v:'https://www.google.com/search?q='+encodeURIComponent(v);
+  window.open(url,'_blank');
+}
+document.getElementById('search-btn').addEventListener('click',goSearch);
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')goSearch();});
+
+/* ── Todo ── */
+let todos=JSON.parse(localStorage.getItem('chulmin_todos')||'[]');
+function saveTodos(){localStorage.setItem('chulmin_todos',JSON.stringify(todos));}
+function renderTodos(){
+  const list=document.getElementById('todo-list'); list.innerHTML='';
+  todos.forEach((t,i)=>{
+    const div=document.createElement('div'); div.className='todo-item';
+    div.innerHTML='<input type="checkbox" class="todo-cb"'+(t.done?' checked':'')+' onchange="toggleTodo('+i+')">'
+      +'<span class="todo-text'+(t.done?' done':'')+'">'+t.text+'</span>'
+      +'<button class="todo-del" onclick="deleteTodo('+i+')">[X]</button>';
+    list.appendChild(div);
+  });
+  const done=todos.filter(t=>t.done).length;
+  document.getElementById('todo-summary').textContent=done+' DONE / '+todos.length+' TOTAL';
+  document.getElementById('todo-badge').textContent=todos.length-done+' LEFT';
+}
+function addTodo(){
+  const inp=document.getElementById('todo-input'),v=inp.value.trim(); if(!v)return;
+  todos.unshift({text:v,done:false}); saveTodos(); renderTodos(); inp.value='';
+}
+function toggleTodo(i){todos[i].done=!todos[i].done;saveTodos();renderTodos();}
+function deleteTodo(i){todos.splice(i,1);saveTodos();renderTodos();}
+function clearDone(){todos=todos.filter(t=>!t.done);saveTodos();renderTodos();}
+document.getElementById('todo-add-btn').addEventListener('click',addTodo);
+document.getElementById('todo-input').addEventListener('keydown',e=>{if(e.key==='Enter')addTodo();});
+renderTodos();
+
+/* ── Memo ── */
+const memoEl=document.getElementById('memo');
+const saved=localStorage.getItem('chulmin_memo');
+if(saved)memoEl.value=saved;
+function updateCnt(){document.getElementById('memo-cnt').textContent=memoEl.value.length+' CHARS';}
+updateCnt();
+memoEl.addEventListener('input',()=>{localStorage.setItem('chulmin_memo',memoEl.value);updateCnt();});
+</script>
+</body>
+</html>
