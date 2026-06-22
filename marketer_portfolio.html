@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Simpson | Marketer</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --c-nav-bg:    #0f0f0f;
+      --c-nav-text:  #e0e0e0;
+      --c-hero-bg:   #0f0f0f;
+      --c-hero-text: #f0ece4;
+      --c-about-bg:  #f5f0e8;
+      --c-about-text:#1a1612;
+      --c-svc-bg:    #1c2b3a;
+      --c-svc-text:  #e8f0f8;
+      --c-work-bg:   #faf7f2;
+      --c-work-text: #1a1612;
+      --c-num-bg:    #2d1f14;
+      --c-num-text:  #f5e6d3;
+      --c-testi-bg:  #f0f4f0;
+      --c-testi-text:#14201a;
+      --c-contact-bg:#1a1a2e;
+      --c-contact-tx:#e8e8f5;
+      --c-foot-bg:   #0a0a0a;
+      --c-foot-text: #888;
+      --gold:        #c9a84c;
+      --gold2:       #e8c97a;
+      --serif:       'Cormorant Garamond',Georgia,serif;
+      --sans:        'DM Sans','Helvetica Neue',sans-serif;
+    }
+    html{scroll-behavior:smooth}
+    body{font-family:var(--sans);font-size:15px;line-height:1.65;background:#0f0f0f}
+    a{text-decoration:none;color:inherit}
+    .container{max-width:1120px;margin:0 auto;padding:0 40px}
+    .eyebrow{font-family:var(--sans);font-size:10px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;margin-bottom:14px}
+
+    /* ══ NAV ══ */
+    #section-nav{
+      position:sticky;top:0;z-index:100;
+      background:var(--c-nav-bg);
+      border-bottom:1px solid #2a2a2a;
+    }
+    #section-nav .container{display:flex;align-items:center;justify-content:space-between;height:62px}
+    .nav-logo{font-family:var(--serif);font-size:22px;font-weight:600;color:var(--c-nav-text);letter-spacing:.04em}
+    .nav-logo em{font-style:italic;color:var(--gold)}
+    .nav-links{display:flex;gap:36px}
+    .nav-links a{font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:#777;transition:color .2s}
+    .nav-links a:hover{color:var(--c-nav-text)}
+    .nav-cta a{
+      font-size:11px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;
+      border:1px solid #444;color:#ccc;padding:8px 18px;
+      transition:all .2s
+    }
+    .nav-cta a:hover{background:var(--gold);border-color:var(--gold);color:#000}
+
+    /* ══ HERO — 검정 ══ */
+    #section-hero{
+      background:var(--c-hero-bg);
+      color:var(--c-hero-text);
+      min-height:100vh;
+      display:grid;
+      grid-template-columns:1fr 380px;
+      border-bottom:1px solid #222;
+    }
+    .hero-left{
+      padding:120px 56px 80px 0;
+      border-right:1px solid #222;
+      display:flex;flex-direction:column;justify-content:center;
+    }
+    .hero-right{
+      padding:120px 0 80px 56px;
+      display:flex;flex-direction:column;justify-content:space-between;
+    }
+    .hero-eyebrow{color:var(--gold);margin-bottom:32px;border-bottom:1px solid #222;padding-bottom:14px}
+    .hero-hl{font-family:var(--serif);font-size:clamp(48px,5.8vw,78px);font-weight:700;line-height:.98;margin-bottom:28px}
+    .hero-hl em{font-style:italic;color:var(--gold)}
+    .hero-sub{font-size:14px;color:#9a9490;line-height:1.85;max-width:460px;margin-bottom:44px}
+    .hero-btns{display:flex;gap:12px;margin-bottom:44px}
+    .btn-gold{background:var(--gold);color:#000;font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;padding:13px 28px;transition:background .2s}
+    .btn-gold:hover{background:var(--gold2)}
+    .btn-ghost{border:1px solid #444;color:#ccc;font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;padding:13px 28px;transition:all .2s}
+    .btn-ghost:hover{border-color:var(--gold);color:var(--gold)}
+    .hero-badges{display:flex;flex-wrap:wrap;gap:8px}
+    .badge{font-size:10px;letter-spacing:.12em;text-transform:uppercase;border:1px solid #2e2e2e;color:#666;padding:5px 12px}
+    .hero-ticker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#555;margin-bottom:28px;padding-bottom:14px;border-bottom:1px solid #222}
+    .hero-stats{display:flex;flex-direction:column}
+    .hero-stat{padding:22px 0;border-bottom:1px solid #1e1e1e}
+    .hero-stat:first-child{border-top:1px solid #1e1e1e}
+    .hero-stat-num{font-family:var(--serif);font-size:46px;font-weight:700;color:#f0ece4;line-height:1}
+    .hero-stat-num span{font-size:22px;color:var(--gold)}
+    .hero-stat-label{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#555;margin-top:5px}
+
+    /* ══ ABOUT — 크림 ══ */
+    #section-about{background:var(--c-about-bg);color:var(--c-about-text);padding:96px 0;border-bottom:3px solid var(--gold)}
+    #section-about .eyebrow{color:var(--gold)}
+    .about-grid{display:grid;grid-template-columns:100px 1fr 1fr;gap:56px;align-items:start}
+    .about-photo{width:100px;height:100px;background:#e8e2d8;border:1px solid #d4cec4;display:flex;align-items:center;justify-content:center;font-size:11px;color:#8a8278;text-align:center;font-family:var(--sans)}
+    .about-name{font-family:var(--serif);font-size:30px;font-weight:700;margin-bottom:18px;line-height:1.2;color:#1a1612}
+    .about-bio{font-size:14px;color:#5a524a;line-height:1.9;margin-bottom:26px}
+    .skill-tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:28px}
+    .skill-tag{font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;border:1px solid #d0c9be;color:#6a6258;padding:5px 12px}
+    .skill-bar-wrap{margin-bottom:16px}
+    .skill-bar-label{display:flex;justify-content:space-between;font-size:11px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#7a726a;margin-bottom:6px}
+    .skill-bar-track{height:2px;background:#d4cec4}
+    .skill-bar-fill{height:2px;background:var(--gold)}
+    .timeline{display:flex;flex-direction:column}
+    .tl-item{display:grid;grid-template-columns:44px 1fr;gap:20px;padding:15px 0;border-bottom:1px solid #ddd8ce}
+    .tl-item:last-child{border-bottom:none}
+    .tl-year{font-family:var(--serif);font-size:13px;font-weight:600;color:var(--gold);padding-top:2px}
+    .tl-title{font-size:13px;font-weight:500;color:#1a1612;margin-bottom:2px}
+    .tl-desc{font-size:12px;color:#7a726a;line-height:1.6}
+
+    /* ══ SERVICES — 네이비 ══ */
+    #section-services{background:var(--c-svc-bg);color:var(--c-svc-text);padding:96px 0;border-bottom:3px solid #3a5a7a}
+    #section-services .eyebrow{color:#7aabcc}
+    .svc-hl{font-family:var(--serif);font-size:clamp(32px,4vw,52px);font-weight:700;color:#e8f0f8;margin-bottom:56px;line-height:1.1}
+    .services-grid{display:grid;grid-template-columns:repeat(3,1fr);border-left:1px solid #2a4055}
+    .service-card{padding:38px 32px;border-right:1px solid #2a4055;border-top:1px solid #2a4055}
+    .service-num{font-family:var(--serif);font-size:11px;font-weight:600;color:#7aabcc;letter-spacing:.18em;margin-bottom:22px}
+    .service-name{font-family:var(--serif);font-size:20px;font-weight:700;color:#e8f0f8;margin-bottom:12px;line-height:1.3}
+    .service-desc{font-size:13px;color:#7a9ab8;line-height:1.8;margin-bottom:18px}
+    .service-result{font-size:10px;font-weight:500;letter-spacing:.12em;text-transform:uppercase;color:#7aabcc;border-top:1px solid #2a4055;padding-top:14px}
+
+    /* ══ WORK — 웜 화이트 ══ */
+    #section-work{background:var(--c-work-bg);color:var(--c-work-text);padding:96px 0;border-bottom:3px solid #ddd8ce}
+    #section-work .eyebrow{color:var(--gold)}
+    .work-hl{font-family:var(--serif);font-size:clamp(28px,3.5vw,44px);font-weight:700;margin-bottom:52px;line-height:1.1;color:#1a1612}
+    .work-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#ddd8ce;border:1px solid #ddd8ce}
+    .work-card{background:var(--c-work-bg);padding:40px 36px}
+    .work-tag{font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin-bottom:18px}
+    .work-title{font-family:var(--serif);font-size:20px;font-weight:700;line-height:1.25;margin-bottom:26px;color:#1a1612}
+    .work-row{margin-bottom:12px}
+    .work-row-label{font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:#b0a898;margin-bottom:4px}
+    .work-row-text{font-size:13px;color:#5a524a;line-height:1.7}
+    .work-results{display:flex;gap:0;margin-top:28px;padding-top:24px;border-top:1px solid #ddd8ce}
+    .work-result-item{flex:1;padding-right:20px;border-right:1px solid #ddd8ce;margin-right:20px}
+    .work-result-item:last-child{border-right:none;margin-right:0;padding-right:0}
+    .work-result-num{font-family:var(--serif);font-size:26px;font-weight:700;color:#1a1612;line-height:1}
+    .work-result-label{font-size:10px;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#b0a898;margin-top:4px}
+
+    /* ══ NUMBERS — 다크 브라운 ══ */
+    #section-numbers{background:var(--c-num-bg);color:var(--c-num-text);border-bottom:3px solid #5a3a22}
+    #section-numbers .eyebrow{color:#c9a06a;padding:48px 40px 0;max-width:1120px;margin:0 auto}
+    .numbers-grid{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #3a2a1a}
+    .number-item{padding:56px 40px;text-align:center;border-right:1px solid #3a2a1a}
+    .number-item:last-child{border-right:none}
+    .number-val{font-family:var(--serif);font-size:clamp(42px,5vw,66px);font-weight:700;color:var(--gold2);line-height:1;margin-bottom:10px}
+    .num-rule{width:28px;height:1px;background:var(--gold);margin:12px auto}
+    .number-label{font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:#9a7a5a}
+
+    /* ══ TESTIMONIALS — 민트 그린 ══ */
+    #section-testimonials{background:var(--c-testi-bg);color:var(--c-testi-text);padding:96px 0;border-bottom:3px solid #b8d4b8}
+    #section-testimonials .eyebrow{color:#4a7a5a}
+    .testi-hl{font-family:var(--serif);font-size:clamp(28px,3.5vw,44px);font-weight:700;margin-bottom:52px;line-height:1.1;color:#14201a}
+    .testi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1px;background:#c8d8c8;border:1px solid #c8d8c8}
+    .testi-card{background:var(--c-testi-bg);padding:48px}
+    .testi-mark{font-family:var(--serif);font-size:72px;color:#c8d8c8;line-height:.8;margin-bottom:16px}
+    .testi-quote{font-family:var(--serif);font-size:17px;font-style:italic;color:#2a3a2e;line-height:1.8;margin-bottom:32px}
+    .testi-divider{height:1px;background:#c8d8c8;margin-bottom:24px}
+    .testi-author{display:flex;align-items:center;gap:14px}
+    .testi-avatar{width:42px;height:42px;background:#d8e8d8;border:1px solid #b8c8b8;display:flex;align-items:center;justify-content:center;font-family:var(--serif);font-size:16px;font-weight:700;color:#4a7a5a}
+    .testi-name{font-size:13px;font-weight:500;color:#14201a}
+    .testi-role{font-size:12px;color:#6a8a72}
+
+    /* ══ CONTACT — 딥 네이비 퍼플 ══ */
+    #section-contact{background:var(--c-contact-bg);color:var(--c-contact-tx);padding:96px 0}
+    #section-contact .eyebrow{color:#9090cc}
+    .contact-inner{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:start}
+    .contact-hl{font-family:var(--serif);font-size:clamp(28px,3.5vw,46px);font-weight:700;line-height:1.12;margin-bottom:18px;color:#e8e8f5}
+    .contact-sub{font-size:14px;color:#8080a8;line-height:1.85;margin-bottom:36px}
+    .contact-links{display:flex;flex-direction:column;border-top:1px solid #2a2a4a}
+    .contact-link{display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid #2a2a4a;font-size:13px;font-weight:400;color:#a0a0cc;transition:color .2s}
+    .contact-link:hover{color:#e8e8f5}
+    .contact-form{display:flex;flex-direction:column;gap:0;border:1px solid #2a2a4a}
+    .form-field{border-bottom:1px solid #2a2a4a}
+    .form-field:last-of-type{border-bottom:none}
+    .form-input{width:100%;background:transparent;border:none;outline:none;font-family:var(--sans);font-size:14px;color:#e8e8f5;padding:18px 20px}
+    .form-input::placeholder{color:#4a4a7a}
+    textarea.form-input{height:120px;resize:none}
+    .form-submit{background:var(--gold);color:#000;font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;padding:18px 20px;border:none;cursor:pointer;width:100%;text-align:left;transition:background .2s}
+    .form-submit:hover{background:var(--gold2)}
+    .form-submit::after{content:' →'}
+
+    /* ══ FOOTER ══ */
+    #section-footer{padding:28px 0;background:var(--c-foot-bg);border-top:1px solid #1a1a1a}
+    #section-footer .container{display:flex;justify-content:space-between;align-items:center}
+    .footer-logo{font-family:var(--serif);font-size:16px;font-weight:600;color:#555;font-style:italic}
+    .footer-copy{font-size:11px;color:#3a3a3a}
+    .footer-links{display:flex;gap:20px}
+    .footer-links a{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#3a3a3a;transition:color .2s}
+    .footer-links a:hover{color:#888}
+
+    /* ══ FADE-IN ══ */
+    .fade-up{opacity:0;transform:translateY(28px);transition:opacity .65s ease,transform .65s ease}
+    .fade-up.visible{opacity:1;transform:translateY(0)}
+
+    /* 반응형 */
+    @media(max-width:900px){
+      #section-hero{grid-template-columns:1fr}
+      .hero-right{display:none}
+      .hero-left{padding:80px 0 60px}
+      .about-grid{grid-template-columns:1fr}
+      .services-grid,.work-grid,.testi-grid,.numbers-grid{grid-template-columns:1fr}
+      .contact-inner{grid-template-columns:1fr}
+      .nav-links{display:none}
+      .work-results{flex-wrap:wrap;gap:16px}
+      .work-result-item{border-right:none;margin-right:0;padding-right:0}
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══ 00. NAV ══ -->
+<nav id="section-nav">
+  <div class="container">
+    <div class="nav-logo">Simp<em>.</em>son</div>
+    <div class="nav-links">
+      <a href="#section-about">About</a>
+      <a href="#section-services">Services</a>
+      <a href="#section-work">Work</a>
+      <a href="#section-contact">Contact</a>
+    </div>
+    <div class="nav-cta"><a href="#section-contact">Inquire →</a></div>
+  </div>
+</nav>
+
+<!-- ══ 01. HERO — 검정 ══ -->
+<section id="section-hero">
+  <div class="hero-left" style="padding-left:40px">
+    <p class="eyebrow hero-eyebrow">Performance & Content Marketing Specialist · 3년차 · Seoul, KR</p>
+    <h1 class="hero-hl">퍼포먼스와<br>콘텐츠, 둘 다<br><em>잡는 마케터.</em></h1>
+    <p class="hero-sub">ROAS 200% 달성, 25개 캠페인 운영, 연 8억 매출 기여. 광고 성과와 콘텐츠 자산을 동시에 쌓아온 3년차 마케터입니다.</p>
+    <div class="hero-btns">
+      <a href="#section-work" class="btn-gold">작업물 보기</a>
+      <a href="#section-contact" class="btn-ghost">프로젝트 문의</a>
+    </div>
+    <div class="hero-badges">
+      <span class="badge">3년 실전 경험</span>
+      <span class="badge">25개 캠페인</span>
+      <span class="badge">ROAS 200%</span>
+      <span class="badge">연 8억 매출 기여</span>
+    </div>
+  </div>
+  <div class="hero-right" style="padding-right:40px">
+    <div class="hero-ticker">Performance Index · 2025</div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hero-stat-num">200<span>%</span></div><div class="hero-stat-label">ROAS</div></div>
+      <div class="hero-stat"><div class="hero-stat-num">25<span>개</span></div><div class="hero-stat-label">캠페인 운영</div></div>
+      <div class="hero-stat"><div class="hero-stat-num">8<span>억</span></div><div class="hero-stat-label">연 매출 기여</div></div>
+      <div class="hero-stat"><div class="hero-stat-num">3<span>년</span></div><div class="hero-stat-label">마케팅 실전 경력</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 02. ABOUT — 크림 ══ -->
+<section id="section-about">
+  <div class="container">
+    <p class="eyebrow">About</p>
+    <div class="about-grid fade-up">
+      <div class="about-photo">프로필<br>사진</div>
+      <div>
+        <div class="about-name">숫자가 말하게 하는<br>마케터, 철민</div>
+        <p class="about-bio">퍼포먼스와 콘텐츠, 두 축을 동시에 운영하는 3년차 마케터입니다. 주니어로 시작해 퍼포먼스 마케터, 매니저·자문까지 빠르게 성장하며 이커머스·스타트업·로컬 브랜드 등 다양한 업종에서 실질적인 성과를 만들어왔습니다.<br><br>광고비 대비 전환 최적화(ROAS)부터 SNS 팔로워 성장, 블로그 오가닉 트래픽까지 — 숫자로 증명하는 마케팅을 합니다.</p>
+        <div class="skill-tags">
+          <span class="skill-tag">Meta Ads</span><span class="skill-tag">Google Ads</span><span class="skill-tag">GA4</span><span class="skill-tag">콘텐츠 마케팅</span><span class="skill-tag">인스타그램 운영</span><span class="skill-tag">블로그 SEO</span><span class="skill-tag">캠페인 기획</span><span class="skill-tag">데이터 분석</span>
+        </div>
+        <div class="skill-bar-wrap"><div class="skill-bar-label"><span>퍼포먼스 마케팅</span><span>75%</span></div><div class="skill-bar-track"><div class="skill-bar-fill" style="width:75%"></div></div></div>
+        <div class="skill-bar-wrap"><div class="skill-bar-label"><span>콘텐츠 마케팅</span><span>70%</span></div><div class="skill-bar-track"><div class="skill-bar-fill" style="width:70%"></div></div></div>
+        <div class="skill-bar-wrap"><div class="skill-bar-label"><span>데이터 분석 (GA4)</span><span>65%</span></div><div class="skill-bar-track"><div class="skill-bar-fill" style="width:65%"></div></div></div>
+      </div>
+      <div class="timeline">
+        <div class="tl-item"><div class="tl-year">2023</div><div><div class="tl-title">주니어 마케터로 입문</div><div class="tl-desc">퍼포먼스·콘텐츠 마케팅 풀 사이클 학습, 첫 캠페인 단독 운영</div></div></div>
+        <div class="tl-item"><div class="tl-year">2023</div><div><div class="tl-title">이커머스 ROAS 200% 달성</div><div class="tl-desc">월 광고비 1천만원 집행, 전환 최적화로 ROAS 200% 기록</div></div></div>
+        <div class="tl-item"><div class="tl-year">2024</div><div><div class="tl-title">퍼포먼스 마케터로 승급</div><div class="tl-desc">25개 캠페인 운영 총괄, 연 8억 매출 기여</div></div></div>
+        <div class="tl-item"><div class="tl-year">2024</div><div><div class="tl-title">스타트업 SNS 성장 프로젝트</div><div class="tl-desc">인스타그램 팔로워 2천 → 8천, 6개월 만에 4배 성장</div></div></div>
+        <div class="tl-item"><div class="tl-year">2025</div><div><div class="tl-title">매니저 + 자문 역할 겸임</div><div class="tl-desc">로컬 브랜드 블로그 오가닉 500 → 3천(4개월), GA4 기반 전략</div></div></div>
+        <div class="tl-item"><div class="tl-year">2025</div><div><div class="tl-title">프리랜서 전환 준비</div><div class="tl-desc">3년 실전 경험을 바탕으로 독립 마케터로 포지셔닝 중</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 03. SERVICES — 네이비 ══ -->
+<section id="section-services">
+  <div class="container">
+    <p class="eyebrow">Services</p>
+    <div class="svc-hl">무엇을 도와드릴<br>수 있나요</div>
+    <div class="services-grid fade-up">
+      <div class="service-card"><div class="service-num">01</div><div class="service-name">퍼포먼스 마케팅</div><p class="service-desc">Meta·Google·카카오 광고 기획부터 운영, 최적화까지. 예산 낭비 없이 ROAS를 끌어올립니다.</p><div class="service-result">평균 ROAS 200% 달성</div></div>
+      <div class="service-card"><div class="service-num">02</div><div class="service-name">브랜드 & 콘텐츠 전략</div><p class="service-desc">브랜드 포지셔닝 설계, SNS 콘텐츠 캘린더, 블로그 SEO 운영까지. 꾸준히 쌓이는 자산형 마케팅.</p><div class="service-result">인스타 팔로워 6개월 내 4배 성장</div></div>
+      <div class="service-card"><div class="service-num">03</div><div class="service-name">데이터 분석 & 컨설팅</div><p class="service-desc">GA4 기반 마케팅 구조 진단, 우선순위와 개선 방향 제시. 단기 프로젝트로도 가능.</p><div class="service-result">블로그 오가닉 4개월 내 6배 증가</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 04. WORK — 웜 화이트 ══ -->
+<section id="section-work">
+  <div class="container">
+    <p class="eyebrow">Selected Work</p>
+    <h2 class="work-hl">직접 만든 성과들</h2>
+    <div class="work-grid fade-up">
+      <div class="work-card">
+        <div class="work-tag">이커머스</div>
+        <div class="work-title">월 광고비 1천만원으로<br>ROAS 200% 달성</div>
+        <div class="work-row"><div class="work-row-label">문제</div><div class="work-row-text">광고비 대비 전환율이 낮아 수익성 확보 어려움. 타겟 세그먼트 오류로 비효율 집행 지속.</div></div>
+        <div class="work-row"><div class="work-row-label">해결</div><div class="work-row-text">오디언스 재정의 → 소재 A/B 테스트 → 입찰 전략 최적화</div></div>
+        <div class="work-results">
+          <div class="work-result-item"><div class="work-result-num">200%</div><div class="work-result-label">ROAS</div></div>
+          <div class="work-result-item"><div class="work-result-num">1천만</div><div class="work-result-label">월 광고비</div></div>
+          <div class="work-result-item"><div class="work-result-num">25개</div><div class="work-result-label">캠페인</div></div>
+        </div>
+      </div>
+      <div class="work-card">
+        <div class="work-tag">스타트업 · SNS</div>
+        <div class="work-title">인스타그램 팔로워<br>2천 → 8천 (6개월)</div>
+        <div class="work-row"><div class="work-row-label">문제</div><div class="work-row-text">팔로워 정체로 브랜드 인지도 확장 한계. 방향성 없이 단순 업로드만 반복.</div></div>
+        <div class="work-row"><div class="work-row-label">해결</div><div class="work-row-text">타겟 페르소나 재정립 → 콘텐츠 캘린더 → 릴스·인터랙션 전략으로 오가닉 도달 확대</div></div>
+        <div class="work-results">
+          <div class="work-result-item"><div class="work-result-num">4×</div><div class="work-result-label">팔로워 성장</div></div>
+          <div class="work-result-item"><div class="work-result-num">6개월</div><div class="work-result-label">달성 기간</div></div>
+          <div class="work-result-item"><div class="work-result-num">8천</div><div class="work-result-label">최종 팔로워</div></div>
+        </div>
+      </div>
+      <div class="work-card">
+        <div class="work-tag">로컬 브랜드 · SEO</div>
+        <div class="work-title">블로그 방문자<br>500 → 3천 (4개월)</div>
+        <div class="work-row"><div class="work-row-label">문제</div><div class="work-row-text">오가닉 유입 거의 없음. 광고 없이는 트래픽 확보 불가한 구조.</div></div>
+        <div class="work-row"><div class="work-row-label">해결</div><div class="work-row-text">키워드 리서치 → 로컬 SEO 최적화 → GA4 기반 콘텐츠 성과 추적 및 반복 개선</div></div>
+        <div class="work-results">
+          <div class="work-result-item"><div class="work-result-num">6×</div><div class="work-result-label">방문자 증가</div></div>
+          <div class="work-result-item"><div class="work-result-num">4개월</div><div class="work-result-label">달성 기간</div></div>
+          <div class="work-result-item"><div class="work-result-num">3천</div><div class="work-result-label">월 방문자</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 05. NUMBERS — 다크 브라운 ══ -->
+<section id="section-numbers">
+  <p class="eyebrow" style="padding:48px 40px 0;max-width:1120px;margin:0 auto;color:#c9a06a">By the Numbers</p>
+      <div class="numbers-grid fade-up" style="max-width:1120px;margin:0 auto">
+    <div class="number-item"><div class="number-val" data-target="200" data-suffix="%">200%</div><div class="num-rule"></div><div class="number-label">ROAS</div></div>
+    <div class="number-item"><div class="number-val" data-target="25" data-suffix="개">25개</div><div class="num-rule"></div><div class="number-label">캠페인 운영</div></div>
+    <div class="number-item"><div class="number-val" data-target="8" data-suffix="억">8억</div><div class="num-rule"></div><div class="number-label">연 매출 기여</div></div>
+    <div class="number-item"><div class="number-val" data-target="3" data-suffix="년">3년</div><div class="num-rule"></div><div class="number-label">마케팅 실전 경력</div></div>
+  </div>
+  <div style="height:48px"></div>
+</section>
+
+<!-- ══ 06. TESTIMONIALS — 민트 그린 ══ -->
+<section id="section-testimonials">
+  <div class="container">
+    <p class="eyebrow">Testimonials</p>
+    <h2 class="testi-hl">함께한 분들의<br>이야기</h2>
+    <div class="testi-grid fade-up">
+      <div class="testi-card">
+        <div class="testi-mark">"</div>
+        <p class="testi-quote">심슨 마케터와 함께하고 나서 광고 성과가 완전히 달라졌어요. 수치를 보여주며 전략을 설명해줘서 신뢰가 갔고, 실제로 ROAS가 2배 이상 뛰었습니다.</p>
+        <div class="testi-divider"></div>
+        <div class="testi-author"><div class="testi-avatar">이</div><div><div class="testi-name">이지수</div><div class="testi-role">대표, 뷰티 브랜드 A</div></div></div>
+      </div>
+      <div class="testi-card">
+        <div class="testi-mark">"</div>
+        <p class="testi-quote">단순히 광고를 돌려주는 게 아니라, 우리 브랜드를 진심으로 이해하고 전략을 짜줬어요. 콘텐츠 방향부터 광고 소재까지 일관성 있게 관리해줘서 팀 전체가 만족했습니다.</p>
+        <div class="testi-divider"></div>
+        <div class="testi-author"><div class="testi-avatar">박</div><div><div class="testi-name">박민준</div><div class="testi-role">CMO, SaaS 스타트업 B</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 07. CONTACT — 딥 네이비 퍼플 ══ -->
+<section id="section-contact">
+  <div class="container">
+    <p class="eyebrow">Contact</p>
+    <div class="contact-inner">
+      <div>
+        <h2 class="contact-hl">지금 프로젝트가<br>있으신가요?</h2>
+        <p class="contact-sub">규모나 예산에 관계없이 먼저 이야기 나눠보세요. 보통 24시간 안에 답장드립니다.</p>
+        <div class="contact-links">
+          <a href="mailto:simpson@example.com" class="contact-link">✉ 이메일 보내기 <span>→</span></a>
+          <a href="https://open.kakao.com/o/simpson" target="_blank" class="contact-link">💬 카카오톡 문의 <span>→</span></a>
+          <a href="https://linkedin.com/in/simpson" class="contact-link">in LinkedIn <span>→</span></a>
+        </div>
+      </div>
+      <div class="contact-form">
+        <form action="https://formspree.io/f/YOUR_FORM_ID" method="POST">
+        <div class="form-field"><input class="form-input" type="text" name="name" placeholder="이름" required/></div>
+        <div class="form-field"><input class="form-input" type="email" name="email" placeholder="이메일" required/></div>
+        <div class="form-field"><textarea class="form-input" name="message" placeholder="문의 내용을 입력해주세요" required></textarea></div>
+        <button type="submit" class="form-submit">보내기</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ 08. FOOTER ══ -->
+<footer id="section-footer">
+  <div class="container">
+    <div class="footer-logo">Simpson</div>
+    <div class="footer-copy">© 2026 Simpson. All rights reserved.</div>
+    <div class="footer-links">
+      <a href="#">LinkedIn</a><a href="#">Instagram</a><a href="mailto:simpson@example.com">Email</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ── 1. 카운터 애니메이션 ── */
+function animateCounter(el){
+  const target=parseFloat(el.dataset.target);
+  const isFloat=el.dataset.target.includes('.');
+  const suffix=el.dataset.suffix||'';
+  const dur=1800,fps=60,steps=dur/1000*fps;
+  let cur=0,frame=0;
+  const tick=()=>{
+    frame++;
+    const progress=frame/steps;
+    const ease=1-Math.pow(1-progress,3);
+    cur=target*ease;
+    el.textContent=(isFloat?cur.toFixed(1):Math.round(cur))+suffix;
+    if(frame<steps)requestAnimationFrame(tick);
+    else el.textContent=(isFloat?target.toFixed(1):target)+suffix;
+  };
+  requestAnimationFrame(tick);
+}
+
+/* ── 2. IntersectionObserver — fade-up + counter trigger ── */
+const fadeObs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(!e.isIntersecting)return;
+    e.target.classList.add('visible');
+    fadeObs.unobserve(e.target);
+  });
+},{threshold:.15});
+
+const cntObs=new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(!e.isIntersecting)return;
+    animateCounter(e.target);
+    cntObs.unobserve(e.target);
+  });
+},{threshold:.5});
+
+document.querySelectorAll('.fade-up').forEach(el=>fadeObs.observe(el));
+document.querySelectorAll('[data-target]').forEach(el=>cntObs.observe(el));
+
+/* ── 3. 폼 제출 피드백 ── */
+const form=document.querySelector('.contact-form form');
+if(form){
+  form.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const btn=form.querySelector('.form-submit');
+    btn.textContent='전송 중...';
+    btn.disabled=true;
+    try{
+      const res=await fetch(form.action,{method:'POST',body:new FormData(form),headers:{Accept:'application/json'}});
+      if(res.ok){
+        btn.textContent='전송 완료 ✓';
+        form.reset();
+      } else{
+        btn.textContent='오류 발생 — 다시 시도해주세요';
+        btn.disabled=false;
+      }
+    }catch{
+      btn.textContent='네트워크 오류';
+      btn.disabled=false;
+    }
+  });
+}
+</script>
+</body>
+</html>
