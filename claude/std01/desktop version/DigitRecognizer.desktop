@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Digit Recognizer
+Comment=Handwritten digit recognizer GUI (MNIST-trained model)
+Exec="/home/kimchulmin/git-directory/AI-projects/claude/std01/desktop version/run_digit_recognizer.sh"
+Icon=applications-science
+Terminal=false
+Categories=Utility;Education;

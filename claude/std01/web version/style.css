@@ -1,0 +1,65 @@
+body {
+  font-family: Helvetica, Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 20px;
+  background: #f2f2f2;
+}
+
+h1 {
+  font-size: 16px;
+  font-weight: normal;
+  margin: 10px 0 0;
+}
+
+canvas {
+  background: black;
+  cursor: crosshair;
+  margin: 10px 0;
+  touch-action: none;
+  border: 1px solid #999;
+}
+
+.buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+button {
+  width: 120px;
+  height: 50px;
+  font-size: 12px;
+  font-weight: bold;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.recognize {
+  background: #4CAF50;
+}
+.recognize:hover {
+  background: #43a047;
+}
+
+.clear {
+  background: #f44336;
+}
+.clear:hover {
+  background: #e53935;
+}
+
+#result {
+  font-size: 22px;
+  font-weight: bold;
+  margin: 6px 0 2px;
+}
+
+#confidence {
+  font-size: 12px;
+  color: #333;
+  margin-bottom: 10px;
+}
