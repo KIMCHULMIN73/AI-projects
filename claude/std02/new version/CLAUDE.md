@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this folder.
 
-## Folder overview
+## Folder overview 
 
 `new version/` is the **next iteration** of the "Daily To-Do Manager" (데일리 할 일 관리 앱), to be built on top of the completed app in `../original version/`.
 
