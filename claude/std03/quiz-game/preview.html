@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[개발용] 화면 미리보기 — 모듈2 검증</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+
+<style>
+  /* 미리보기 툴바 (이 파일에서만 쓰는 개발용 UI) */
+  #preview-bar {
+    position: fixed; z-index: 999; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+    background: rgba(16, 18, 31, .92); padding: 10px 12px; border-radius: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5); max-width: calc(100vw - 24px);
+    font-family: system-ui, sans-serif;
+  }
+  #preview-bar button {
+    font: inherit; font-size: .82rem; font-weight: 700; color: #fff; cursor: pointer;
+    background: #3b4166; border: 1px solid #565d8a; border-radius: 9px; padding: 7px 12px;
+  }
+  #preview-bar button:hover { background: #4a5cf5; border-color: #4a5cf5; }
+  #preview-bar .pv-tag {
+    font-size: .72rem; color: #8d92a3; align-self: center; padding-right: 4px;
+    letter-spacing: .06em; font-weight: 700;
+  }
+</style>
+</head>
+<body>
+<script type="module">
+/* [개발 전용] 모듈2(뷰) 단독 검증 페이지 — 게임 로직·사운드 없이 더미 데이터로만 렌더한다.
+   index.html의 마크업을 fetch 해서 그대로 주입하므로 마크업이 이중으로 관리되지 않는다.
+   innerHTML로 주입된 <script>는 실행되지 않으므로 main.js(모듈3)는 돌지 않는다. */
+
+const source = await fetch('index.html').then((r) => r.text());
+const parsed = new DOMParser().parseFromString(source, 'text/html');
+document.body.innerHTML = parsed.body.innerHTML;
+
+// views.js는 로드 시점에 DOM을 캡처하므로 반드시 주입 후에 import 한다.
+const { Views } = await import('./js/views.js');
+const { CATEGORIES, CATEGORY_ORDER, QUESTION_BANK } = await import('./data/questions.js');
+
+/* ── 더미 데이터 ─────────────────────────────────────────── */
+const dummyQuestion = QUESTION_BANK.find((q) => q.category === 'science');
+
+const dummySummary = {
+  name: '홍길동',
+  score: 180,
+  correctCount: 29,
+  total: 40,
+  accuracy: 29 / 40,
+  byCategory: {
+    korean_history: 0.9,
+    science: 0.6,
+    world_geography: 0.8,
+    arts_culture: 0.6,
+  },
+};
+
+const dummyRanking = [
+  { name: '김철민', score: 260 },
+  { name: '홍길동', score: 180 },
+  { name: '이영희', score: 180 },
+  { name: '박상수', score: 120 },
+  { name: '최다은', score: 60 },
+];
+
+function renderQuestion(categoryIndex = 1) {
+  const category = CATEGORY_ORDER[categoryIndex];
+  const question = QUESTION_BANK.find((q) => q.category === category);
+  Views.setBackground(category);
+  Views.showQuestion(question, { name: '홍길동', index: 12, total: 40, score: 140 });
+  return question;
+}
+
+/* ── 툴바 ────────────────────────────────────────────────── */
+const actions = [
+  ['시작 화면', () => Views.showStart()],
+  ['게임 화면', () => renderQuestion(1)],
+  ['정답 팝업', () => {
+    const q = renderQuestion(1);
+    Views.showFeedback(true, q.explanation,
+      { delta: 10, selectedIndex: q.answerIndex, answerIndex: q.answerIndex });
+  }],
+  ['오답 팝업', () => {
+    const q = renderQuestion(1);
+    const wrong = (q.answerIndex + 1) % 4;
+    Views.showFeedback(false, q.explanation,
+      { delta: -10, selectedIndex: wrong, answerIndex: q.answerIndex });
+  }],
+  ['완료 화면', () => Views.showResult(dummySummary)],
+  ['랭킹 화면', () => Views.showRanking(dummyRanking, { highlightIndex: 1 })],
+  ['랭킹(빈 목록)', () => Views.showRanking([])],
+  ['배경 순환', () => {
+    let i = 0;
+    const keys = ['start', ...CATEGORY_ORDER];
+    clearInterval(window.__bgTimer);
+    window.__bgTimer = setInterval(() => {
+      Views.setBackground(keys[i % keys.length]);
+      i++;
+    }, 900);
+    setTimeout(() => clearInterval(window.__bgTimer), 900 * keys.length * 2);
+  }],
+];
+
+const bar = document.createElement('div');
+bar.id = 'preview-bar';
+const tag = document.createElement('span');
+tag.className = 'pv-tag';
+tag.textContent = '개발용 미리보기';
+bar.append(tag);
+actions.forEach(([label, run]) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = label;
+  button.addEventListener('click', run);
+  bar.append(button);
+});
+document.body.append(bar);
+
+// 콘솔에서 직접 만져 볼 수 있게 노출 (개발용)
+Object.assign(window, { Views, CATEGORIES, CATEGORY_ORDER, QUESTION_BANK, dummySummary, dummyRanking });
+
+Views.preloadBackgrounds();
+Views.showStart();
+console.log('[preview] 모듈2 뷰 미리보기 준비 완료. window.Views 로 직접 호출해 볼 수 있습니다.');
+</script>
+</body>
+</html>
