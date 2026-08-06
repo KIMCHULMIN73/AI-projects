@@ -10,10 +10,14 @@ import {
 /** localStorage 키. 다른 프로젝트와 겹치지 않도록 quiz. 접두어를 쓴다. */
 const RANKINGS_KEY = 'quiz.rankings';
 
-/** 분야당 출제 문항 수와 난이도 배분(PRD §2: 최상1 / 상2 / 중5 / 하2). */
+/**
+ * 분야당 출제 문항 수와 난이도 배분.
+ * 최상1 / 상2 / 중4 / 하2 / 최하1 = 10문제 → 요청 비율 10:20:40:20:10과 같다.
+ * 합이 QUESTIONS_PER_CATEGORY와 일치해야 한다.
+ */
 export const QUESTIONS_PER_CATEGORY = 10;
 export const TOTAL_QUESTIONS = QUESTIONS_PER_CATEGORY * CATEGORY_ORDER.length;
-const DIFFICULTY_QUOTA = { top: 1, high: 2, mid: 5, low: 2 };
+const DIFFICULTY_QUOTA = { top: 1, high: 2, mid: 4, low: 2, bottom: 1 };
 
 /** Fisher–Yates. 원본을 건드리지 않고 새 배열을 돌려준다. */
 function shuffle(list) {
@@ -27,7 +31,7 @@ function shuffle(list) {
 
 /**
  * 해당 난이도 풀이 비었을 때 보충할 가장 가까운 난이도를 찾는다.
- * DIFFICULTY_ORDER가 low→top 순으로 정렬돼 있어 인덱스 차이가 곧 난이도 거리다.
+ * DIFFICULTY_ORDER가 bottom→top 순으로 정렬돼 있어 인덱스 차이가 곧 난이도 거리다.
  */
 function nearestAvailable(byDifficulty, target) {
   const targetRank = DIFFICULTY_ORDER.indexOf(target);

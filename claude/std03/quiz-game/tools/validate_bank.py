@@ -18,16 +18,28 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-BANK_PATH = Path(__file__).resolve().parent.parent / "data" / "questions.js"
+BANK_DIR = Path(__file__).resolve().parent.parent / "data" / "questions"
+
+# 문항 파일 → 그 파일이 담당하는 분야. 각 파일은 category를 상수 C로 묶어 두므로
+# 파일명에서 분야를 알아내야 한다(파일 안에 분야 문자열이 한 번만 나온다).
+CATEGORY_FILES = {
+    "korean_history": "korean-history.js",
+    "science": "science.js",
+    "world_geography": "world-geography.js",
+    "arts_culture": "arts-culture.js",
+}
 
 CATEGORY_ORDER = ["korean_history", "science", "world_geography", "arts_culture"]
-DIFFICULTY_ORDER = ["low", "mid", "high", "top"]  # storage.js와 동일한 순서
-DIFFICULTY_QUOTA = {"top": 1, "high": 2, "mid": 5, "low": 2}
+DIFFICULTY_ORDER = ["bottom", "low", "mid", "high", "top"]  # storage.js와 동일한 순서
+DIFFICULTY_QUOTA = {"top": 1, "high": 2, "mid": 4, "low": 2, "bottom": 1}
 QUESTIONS_PER_CATEGORY = sum(DIFFICULTY_QUOTA.values())
+
+# 분야별 문제 은행이 갖춰야 할 구성(요청 비율 10:20:40:20:10).
+EXPECTED_BANK_MIX = {"top": 10, "high": 20, "mid": 40, "low": 20, "bottom": 10}
+EXPECTED_PER_CATEGORY = sum(EXPECTED_BANK_MIX.values())
 
 OBJECT_RE = re.compile(r"\{\s*\n\s*id:\s*'([^']+)',(.*?)\n  \},", re.S)
 FIELD_RE = {
-    "category": re.compile(r"\n\s*category:\s*'([^']+)'"),
     "difficulty": re.compile(r"\n\s*difficulty:\s*'([^']+)'"),
     "answerIndex": re.compile(r"\n\s*answerIndex:\s*(\d+)"),
 }
@@ -37,12 +49,12 @@ CHOICES_RE = re.compile(r"\n\s*choices:\s*\[(.*?)\],", re.S)
 STRING_RE = re.compile(r"\"(?:[^\"\\]|\\.)*\"|'(?:[^'\\]|\\.)*'")
 
 
-def parse_bank(source: str):
-    """questions.js에서 문항 객체를 뽑아낸다."""
+def parse_bank(source: str, category: str):
+    """분야 파일 하나에서 문항 객체를 뽑아낸다. category는 파일 단위로 주어진다."""
     questions = []
     for match in OBJECT_RE.finditer(source):
         qid, body = match.group(1), match.group(2)
-        entry = {"id": qid}
+        entry = {"id": qid, "category": category}
         for key, pattern in FIELD_RE.items():
             found = pattern.search(body)
             entry[key] = found.group(1) if found else None
@@ -107,8 +119,10 @@ def get_quiz_set(bank):
 
 
 def main():
-    source = BANK_PATH.read_text(encoding="utf-8")
-    bank = parse_bank(source)
+    bank = []
+    for category in CATEGORY_ORDER:
+        path = BANK_DIR / CATEGORY_FILES[category]
+        bank.extend(parse_bank(path.read_text(encoding="utf-8"), category))
     failures = []
 
     def check(label, ok, extra=""):
@@ -117,7 +131,8 @@ def main():
             failures.append(label)
 
     print(f"── 문제 은행 무결성 ({len(bank)}문항) ──")
-    check("문항 60개 이상", len(bank) >= 60, f"{len(bank)}문항")
+    expected_total = EXPECTED_PER_CATEGORY * len(CATEGORY_ORDER)
+    check(f"전체 {expected_total}문항", len(bank) == expected_total, f"{len(bank)}문항")
 
     ids = [q["id"] for q in bank]
     duplicates = [i for i, n in Counter(ids).items() if n > 1]
@@ -144,18 +159,20 @@ def main():
     no_explanation = [q["id"] for q in bank if not q["explanation"].strip()]
     check("해설 존재(전 문항 필수)", not no_explanation, ", ".join(no_explanation))
 
-    print("\n── 분야별 난이도 하한 (샘플링 할당량 충족 여부) ──")
+    print("\n── 분야별 문제 은행 구성 (최상10/상20/중40/하20/최하10) ──")
     by_category = defaultdict(Counter)
     for question in bank:
         by_category[question["category"]][question["difficulty"]] += 1
     for category in CATEGORY_ORDER:
         counts = by_category[category]
         total = sum(counts.values())
-        ok = total >= QUESTIONS_PER_CATEGORY and all(
-            counts[d] >= DIFFICULTY_QUOTA[d] for d in DIFFICULTY_QUOTA
+        ok = total == EXPECTED_PER_CATEGORY and all(
+            counts[d] == EXPECTED_BANK_MIX[d] for d in EXPECTED_BANK_MIX
         )
-        detail = f"총 {total} / " + " ".join(f"{d}:{counts[d]}" for d in ["top", "high", "mid", "low"])
-        check(f"{category} 할당량 충족", ok, detail)
+        detail = f"총 {total} / " + " ".join(
+            f"{d}:{counts[d]}" for d in ["top", "high", "mid", "low", "bottom"]
+        )
+        check(f"{category} 구성 일치", ok, detail)
 
     print("\n── getQuizSet() 시뮬레이션 (500회) ──")
     size_ok = order_ok = dup_ok = ratio_ok = True
@@ -176,7 +193,7 @@ def main():
     check("항상 40문제", size_ok)
     check("세트 내 중복 없음", dup_ok)
     check("분야 블록 순서 = 한국사→과학→세계지리→예술", order_ok)
-    check("분야마다 최상1/상2/중5/하2", ratio_ok)
+    check("분야마다 최상1/상2/중4/하2/최하1", ratio_ok)
 
     first = [q["id"] for q in get_quiz_set(bank)]
     second = [q["id"] for q in get_quiz_set(bank)]
