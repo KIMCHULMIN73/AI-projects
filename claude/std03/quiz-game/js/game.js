@@ -9,8 +9,25 @@ import { Views } from './views.js';
 import { Audio } from './audio.js';
 
 const INITIAL_SCORE = 100;
-const CORRECT_DELTA = 10;
+
+/**
+ * 난이도별 정답 배점. 어려운 문제를 맞힐수록 크게 오른다.
+ * **점수 규칙은 모듈3의 소관**이므로 뷰는 이 표를 모른다 — 화면에 띄울 점수는
+ * showQuestion에 인자로 넘겨 준다.
+ */
+const POINTS_BY_DIFFICULTY = { top: 50, high: 40, mid: 30, low: 20, bottom: 10 };
+/** 표에 없는 난이도가 들어와도 게임이 멈추지 않도록 하는 기본값. */
+const FALLBACK_POINTS = 10;
+/** 오답은 난이도와 무관하게 일괄 -10. */
 const WRONG_DELTA = -10;
+
+/** 몇 문제마다 BGM을 바꿀지. 40문제 한 판에 4곡이 흐른다. */
+const BGM_SWITCH_EVERY = 10;
+
+/** 이 문제를 맞히면 얻는 점수. */
+function pointsFor(question) {
+  return POINTS_BY_DIFFICULTY[question.difficulty] ?? FALLBACK_POINTS;
+}
 
 const state = {
   phase: 'START', // START | PLAYING | FEEDBACK | RESULT | RANKING
@@ -20,8 +37,6 @@ const state = {
   score: INITIAL_SCORE,
   /** category → { correct, total } */
   tally: {},
-  /** 배경·BGM은 분야가 바뀔 때만 전환한다(문제마다 트랙을 갈면 곡이 계속 끊긴다). */
-  lastCategory: null,
 };
 
 function resetTally() {
@@ -31,15 +46,22 @@ function resetTally() {
   });
 }
 
-/** 현재 문제를 화면에 그린다. 분야가 바뀌었으면 배경과 BGM도 전환한다. */
+/**
+ * 현재 문제를 화면에 그린다.
+ *
+ * 출제 순서를 섞은 뒤로는 분야가 거의 매 문제 바뀌므로 **배경과 BGM을 떼어 놨다.**
+ * - 배경: 문제의 분야를 따라간다. `setBackground`가 같은 키면 스스로 no-op이라
+ *   같은 분야가 연달아 나와도 헛일을 하지 않는다.
+ * - BGM: 분야가 아니라 **진행 문항 수**를 따라 BGM_SWITCH_EVERY마다 바꾼다.
+ *   분야마다 갈아 끼우면 곡이 매번 처음부터 다시 시작해 음악이 성립하지 않는다.
+ */
 function renderCurrentQuestion() {
   const question = state.questions[state.index];
   if (!question) return;
 
-  if (question.category !== state.lastCategory) {
-    state.lastCategory = question.category;
-    Views.setBackground(question.category);
-    if (state.index > 0) Audio.nextBgm(); // 첫 분야는 startBgm이 이미 재생 중
+  Views.setBackground(question.category);
+  if (state.index > 0 && state.index % BGM_SWITCH_EVERY === 0) {
+    Audio.nextBgm(); // 첫 곡은 startBgm이 이미 재생 중
   }
 
   Views.showQuestion(question, {
@@ -47,6 +69,7 @@ function renderCurrentQuestion() {
     index: state.index,
     total: state.questions.length,
     score: state.score,
+    points: pointsFor(question),
   });
 }
 
@@ -71,12 +94,16 @@ function buildSummary() {
   };
 }
 
-/** 문제 세트를 새로 뽑아 처음부터 시작한다(이름은 유지). */
+/**
+ * 문제 세트를 새로 뽑아 처음부터 시작한다(이름은 유지).
+ * 직전 판에 나온 문항은 되도록 피하고, 이번 판의 문항 id를 다음 판을 위해 남긴다.
+ */
 function beginRound() {
-  state.questions = getQuizSet();
+  state.questions = getQuizSet({ exclude: Storage.getLastQuestionIds() });
+  Storage.saveLastQuestionIds(state.questions.map((q) => q.id));
+
   state.index = 0;
   state.score = INITIAL_SCORE;
-  state.lastCategory = null;
   state.phase = 'PLAYING';
   resetTally();
   renderCurrentQuestion();
@@ -105,8 +132,9 @@ export const Game = {
 
     state.phase = 'FEEDBACK';
 
+    // 정답은 난이도만큼(최상 +50 … 최하 +10), 오답은 언제나 -10.
     const isCorrect = index === question.answerIndex;
-    const delta = isCorrect ? CORRECT_DELTA : WRONG_DELTA;
+    const delta = isCorrect ? pointsFor(question) : WRONG_DELTA;
     state.score += delta;
 
     const tally = state.tally[question.category];
@@ -187,7 +215,6 @@ export const Game = {
   /** 랭킹 화면의 "다시 시작하기" — 시작 화면으로 되돌린다. */
   restart() {
     state.phase = 'START';
-    state.lastCategory = null;
     Audio.stopBgm();
     Views.showStart();
     Views.focusNameInput();

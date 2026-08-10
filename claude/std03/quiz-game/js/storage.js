@@ -9,6 +9,8 @@ import {
 
 /** localStorage 키. 다른 프로젝트와 겹치지 않도록 quiz. 접두어를 쓴다. */
 const RANKINGS_KEY = 'quiz.rankings';
+/** 바로 앞 게임에서 출제한 문항 id. 다음 판에서 되도록 피하는 데 쓴다. */
+const LAST_SET_KEY = 'quiz.lastSet';
 
 /**
  * 분야당 출제 문항 수와 난이도 배분.
@@ -48,8 +50,14 @@ function nearestAvailable(byDifficulty, target) {
   return best;
 }
 
-/** 한 분야의 문제 풀에서 난이도 비율을 지켜 QUESTIONS_PER_CATEGORY개를 뽑는다. */
-function pickFromCategory(pool) {
+/**
+ * 한 분야의 문제 풀에서 난이도 비율을 지켜 QUESTIONS_PER_CATEGORY개를 뽑는다.
+ *
+ * exclude에 든 id(=직전 판에 나온 문항)는 **난이도 안에서 뒤로 미룰 뿐 제외하지는 않는다.**
+ * 난이도별로 "안 나온 것 먼저, 모자라면 나온 것"으로 이어 붙여 두고 앞에서부터 잘라 쓰므로,
+ * 어떤 난이도의 여유분이 바닥나도 **할당량과 비율은 그대로 지켜진다**(중복 회피는 최선 노력).
+ */
+function pickFromCategory(pool, exclude) {
   const byDifficulty = {};
   DIFFICULTY_ORDER.forEach((difficulty) => {
     byDifficulty[difficulty] = [];
@@ -60,7 +68,10 @@ function pickFromCategory(pool) {
     }
   });
   DIFFICULTY_ORDER.forEach((difficulty) => {
-    byDifficulty[difficulty] = shuffle(byDifficulty[difficulty]);
+    const bucket = byDifficulty[difficulty];
+    const fresh = bucket.filter((q) => !exclude.has(q.id));
+    const used = bucket.filter((q) => exclude.has(q.id));
+    byDifficulty[difficulty] = [...shuffle(fresh), ...shuffle(used)];
   });
 
   const picked = [];
@@ -91,16 +102,23 @@ function pickFromCategory(pool) {
 
 /**
  * 게임 한 판에 쓸 문제 세트를 만든다.
- * 분야별 10문제씩, 난이도 비율을 지켜 무작위 샘플링하며 중복은 없다.
- * 반환 배열은 CATEGORY_ORDER 순서(한국사→과학→세계지리→예술)로 이어 붙인다.
+ *
+ * 분야별 10문제씩 난이도 비율을 지켜 뽑은 뒤 **40문제 전체를 다시 섞어서** 돌려준다.
+ * 그래서 분야가 뒤섞여 나오고, 다음에 어떤 분야가 나올지 예측되지 않는다.
+ * (분야별로 몇 문제가 나가는지는 그대로다 — 섞는 것은 순서뿐이다.)
+ *
+ * @param {{exclude?: Iterable<string>}} [options] exclude에 든 id는 되도록 피한다.
  */
-export function getQuizSet() {
+export function getQuizSet(options = {}) {
+  const exclude =
+    options.exclude instanceof Set ? options.exclude : new Set(options.exclude || []);
+
   const quizSet = [];
   CATEGORY_ORDER.forEach((category) => {
     const pool = QUESTION_BANK.filter((q) => q.category === category);
-    quizSet.push(...pickFromCategory(pool));
+    quizSet.push(...pickFromCategory(pool, exclude));
   });
-  return quizSet;
+  return shuffle(quizSet);
 }
 
 /** localStorage 원본 읽기. 실패하거나 형식이 깨져 있으면 빈 배열로 취급한다. */
@@ -153,6 +171,30 @@ export const Storage = {
       return false;
     }
   },
+
+  /**
+   * 방금 끝난 판의 문항 id를 남긴다. 다음 판에서 되도록 피하려는 용도라
+   * **저장에 실패해도 조용히 넘어간다**(중복이 좀 생길 뿐 게임에는 지장이 없다).
+   * 새로고침으로 페이지를 다시 열어도 이어지도록 localStorage에 둔다.
+   */
+  saveLastQuestionIds(ids) {
+    try {
+      localStorage.setItem(LAST_SET_KEY, JSON.stringify(Array.from(ids)));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  },
+
+  /** 직전 판의 문항 id 목록. 없거나 깨져 있으면 빈 배열. */
+  getLastQuestionIds() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LAST_SET_KEY) || '[]');
+      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+    } catch (error) {
+      return [];
+    }
+  },
 };
 
 // ── 콘솔 테스트 예시 ───────────────────────────────────────────────
@@ -168,13 +210,18 @@ export const Storage = {
 //   set.forEach(q => byCat[q.category] = (byCat[q.category]||0) + 1);
 //   console.log(byCat);          // 각 분야 10
 //
-//   // 2) 난이도 비율(분야당 top1/high2/mid5/low2) 확인
+//   // 2) 난이도 비율(분야당 top1/high2/mid4/low2/bottom1) 확인
 //   const byDiff = {};
 //   set.forEach(q => byDiff[q.difficulty] = (byDiff[q.difficulty]||0) + 1);
-//   console.log(byDiff);         // { top:4, high:8, mid:20, low:8 }
+//   console.log(byDiff);         // { top:4, high:8, mid:16, low:8, bottom:4 }
 //
-//   // 3) 재호출 시 문제가 바뀌는지 확인
-//   console.log(getQuizSet()[0].id !== getQuizSet()[0].id);     // 대체로 true
+//   // 3) 출제 순서가 분야를 가로질러 섞였는지 확인
+//   console.log(set.map(q => q.category.slice(0,2)).join(' '));  // 뒤섞여 보여야 정상
+//
+//   // 4) 직전 판 회피 확인 — 겹치는 문항이 0개여야 한다
+//   const again = getQuizSet({ exclude: set.map(q => q.id) });
+//   const prev = new Set(set.map(q => q.id));
+//   console.log(again.filter(q => prev.has(q.id)).length);       // 0
 //
 //   // 4) 저장 → 정렬 조회 확인
 //   Storage.clearRankings();

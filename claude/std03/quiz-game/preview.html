@@ -69,11 +69,22 @@ const dummyRanking = [
   { name: '최다은', score: 60 },
 ];
 
-function renderQuestion(categoryIndex = 1) {
+// 배점은 game.js가 계산해 넘겨 주는 값이다. 미리보기에서는 같은 표를 흉내만 낸다.
+const PREVIEW_POINTS = { top: 50, high: 40, mid: 30, low: 20, bottom: 10 };
+
+function renderQuestion(categoryIndex = 1, difficulty = 'mid') {
   const category = CATEGORY_ORDER[categoryIndex];
-  const question = QUESTION_BANK.find((q) => q.category === category);
+  const question =
+    QUESTION_BANK.find((q) => q.category === category && q.difficulty === difficulty) ||
+    QUESTION_BANK.find((q) => q.category === category);
   Views.setBackground(category);
-  Views.showQuestion(question, { name: '홍길동', index: 12, total: 40, score: 140 });
+  Views.showQuestion(question, {
+    name: '홍길동',
+    index: 12,
+    total: 40,
+    score: 140,
+    points: PREVIEW_POINTS[question.difficulty] ?? 10,
+  });
   return question;
 }
 
@@ -81,10 +92,20 @@ function renderQuestion(categoryIndex = 1) {
 const actions = [
   ['시작 화면', () => Views.showStart()],
   ['게임 화면', () => renderQuestion(1)],
+  ['배점 5단계', () => {
+    // 최하10 → 최상50까지 뱃지 색과 크기를 눈으로 확인한다.
+    const tiers = ['bottom', 'low', 'mid', 'high', 'top'];
+    let i = 0;
+    const timer = setInterval(() => {
+      renderQuestion(i % CATEGORY_ORDER.length, tiers[i]);
+      if (++i >= tiers.length) clearInterval(timer);
+    }, 900);
+    renderQuestion(0, tiers[i++]);
+  }],
   ['정답 팝업', () => {
     const q = renderQuestion(1);
     Views.showFeedback(true, q.explanation,
-      { delta: 10, selectedIndex: q.answerIndex, answerIndex: q.answerIndex });
+      { delta: 30, selectedIndex: q.answerIndex, answerIndex: q.answerIndex });
   }],
   ['오답 팝업', () => {
     const q = renderQuestion(1);

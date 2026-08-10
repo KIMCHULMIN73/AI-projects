@@ -83,13 +83,19 @@ def nearest_available(by_difficulty, target):
     return best
 
 
-def pick_from_category(pool):
+def pick_from_category(pool, exclude):
     by_difficulty = {d: [] for d in DIFFICULTY_ORDER}
     for question in pool:
         if question["difficulty"] in by_difficulty:
             by_difficulty[question["difficulty"]].append(question)
+    # 직전 판에 나온 문항은 난이도 안에서 뒤로 미룬다(제외가 아니라 후순위).
     for difficulty in DIFFICULTY_ORDER:
-        random.shuffle(by_difficulty[difficulty])
+        bucket = by_difficulty[difficulty]
+        fresh = [q for q in bucket if q["id"] not in exclude]
+        used = [q for q in bucket if q["id"] in exclude]
+        random.shuffle(fresh)
+        random.shuffle(used)
+        by_difficulty[difficulty] = fresh + used
 
     picked, shortfalls = [], []
     for difficulty in DIFFICULTY_ORDER:
@@ -111,10 +117,13 @@ def pick_from_category(pool):
     return picked
 
 
-def get_quiz_set(bank):
+def get_quiz_set(bank, exclude=frozenset()):
     quiz_set = []
     for category in CATEGORY_ORDER:
-        quiz_set.extend(pick_from_category([q for q in bank if q["category"] == category]))
+        quiz_set.extend(
+            pick_from_category([q for q in bank if q["category"] == category], exclude)
+        )
+    random.shuffle(quiz_set)  # 출제 순서는 분야를 가로질러 섞는다
     return quiz_set
 
 
@@ -175,29 +184,57 @@ def main():
         check(f"{category} 구성 일치", ok, detail)
 
     print("\n── getQuizSet() 시뮬레이션 (500회) ──")
-    size_ok = order_ok = dup_ok = ratio_ok = True
+    size_ok = dup_ok = ratio_ok = per_category_ok = True
+    blocked_runs = 0  # 분야가 블록째로 뭉쳐 나온 판의 수
     for _ in range(500):
         quiz_set = get_quiz_set(bank)
         if len(quiz_set) != QUESTIONS_PER_CATEGORY * len(CATEGORY_ORDER):
             size_ok = False
         if len({q["id"] for q in quiz_set}) != len(quiz_set):
             dup_ok = False
-        for index, category in enumerate(CATEGORY_ORDER):
-            block = quiz_set[index * QUESTIONS_PER_CATEGORY:(index + 1) * QUESTIONS_PER_CATEGORY]
-            if any(q["category"] != category for q in block):
-                order_ok = False
+
+        for category in CATEGORY_ORDER:
+            block = [q for q in quiz_set if q["category"] == category]
+            if len(block) != QUESTIONS_PER_CATEGORY:
+                per_category_ok = False
             counts = Counter(q["difficulty"] for q in block)
             if any(counts[d] != DIFFICULTY_QUOTA[d] for d in DIFFICULTY_QUOTA):
                 ratio_ok = False
 
+        # 섞였는지 확인: 이웃한 문제의 분야가 바뀌는 횟수가 3(=블록 배치)뿐이면 안 섞인 것이다.
+        switches = sum(
+            1 for a, b in zip(quiz_set, quiz_set[1:]) if a["category"] != b["category"]
+        )
+        if switches <= len(CATEGORY_ORDER) - 1:
+            blocked_runs += 1
+
     check("항상 40문제", size_ok)
     check("세트 내 중복 없음", dup_ok)
-    check("분야 블록 순서 = 한국사→과학→세계지리→예술", order_ok)
+    check("분야별 10문제씩", per_category_ok)
     check("분야마다 최상1/상2/중4/하2/최하1", ratio_ok)
+    check("출제 순서가 분야를 가로질러 섞임", blocked_runs == 0, f"블록 배치 {blocked_runs}/500회")
 
     first = [q["id"] for q in get_quiz_set(bank)]
     second = [q["id"] for q in get_quiz_set(bank)]
     check("재호출 시 세트가 달라짐(재도전 대응)", first != second)
+
+    print("\n── 직전 판 중복 회피 (연속 2판 × 200회) ──")
+    overlaps, ratio_kept = [], True
+    for _ in range(200):
+        prev = get_quiz_set(bank)
+        prev_ids = {q["id"] for q in prev}
+        nxt = get_quiz_set(bank, exclude=prev_ids)
+        overlaps.append(len(prev_ids & {q["id"] for q in nxt}))
+        for category in CATEGORY_ORDER:
+            counts = Counter(
+                q["difficulty"] for q in nxt if q["category"] == category
+            )
+            if any(counts[d] != DIFFICULTY_QUOTA[d] for d in DIFFICULTY_QUOTA):
+                ratio_kept = False
+
+    worst = max(overlaps)
+    check("직전 판과 겹치는 문항 0개", worst == 0, f"최대 {worst}개 / 평균 {sum(overlaps)/len(overlaps):.2f}개")
+    check("회피하면서도 난이도 비율 유지", ratio_kept)
 
     print()
     if failures:

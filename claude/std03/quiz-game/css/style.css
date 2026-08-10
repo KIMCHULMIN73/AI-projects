@@ -387,12 +387,56 @@ body {
 
 .question-category .qc-icon { font-size: 1.3rem; }
 
+/* 배점 뱃지 + 문제. 뱃지를 문제 왼쪽에 두고, 글이 길면 아래로 흐르게 한다. */
+.question-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+
+/* 맞혔을 때 얻는 점수. 숫자는 VT323으로 크게 — 한눈에 값을 알아보게 한다. */
+.question-points {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  color: #fff;
+  background: var(--brand);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, .18);
+  line-height: 1;
+}
+
+.question-points[hidden] { display: none; }
+
+.question-points .qp-value {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(2rem, 4.2vw, 2.9rem);
+  letter-spacing: .02em;
+}
+
+.question-points .qp-unit {
+  font-size: .95rem;
+  font-weight: 800;
+  opacity: .9;
+}
+
+/* 난이도가 올라갈수록 뱃지가 뜨거워진다 — 값과 색이 함께 난이도를 알려 준다. */
+.question-points[data-tier='bottom'] { background: #7f8c8d; }
+.question-points[data-tier='low']    { background: #2e8b57; }
+.question-points[data-tier='mid']    { background: #2f6fd0; }
+.question-points[data-tier='high']   { background: #d97706; }
+.question-points[data-tier='top']    { background: #c0392b; }
+
 .question-text {
   font-size: clamp(1.25rem, 2.4vw, 1.7rem);
   font-weight: 800;
   line-height: 1.45;
   word-break: keep-all;
-  margin-bottom: 26px;
+  margin: 0;
+  padding-top: 4px;
 }
 
 .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
@@ -755,6 +799,10 @@ body {
   .nail-tr, .nail-br { right: 9px; }
   .category-cards { grid-template-columns: repeat(2, 1fr); }
   .choices { grid-template-columns: 1fr; }
+
+  /* 좁은 화면에서는 배점을 문제 위로 올린다(옆에 두면 문제 글이 너무 눌린다). */
+  .question-head { flex-direction: column; gap: 10px; }
+  .question-points { align-self: flex-start; }
   .result-stats { grid-template-columns: 1fr; }
   .start-row { flex-direction: column; }
   .btn { width: 100%; }

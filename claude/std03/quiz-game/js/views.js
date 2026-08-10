@@ -70,6 +70,7 @@ const el = {
   topbarScore: $('.topbar-score'),
 
   questionCategory: $('#questionCategory'),
+  questionPoints: $('#questionPoints'),
   questionText: $('#questionText'),
   choices: $('#choices'),
 
@@ -160,7 +161,7 @@ export const Views = {
    * @param {{name:string, index:number, total:number, score:number}} state index는 0-based
    */
   showQuestion(q, state) {
-    const { name, index, total, score } = state;
+    const { name, index, total, score, points } = state;
     const current = index + 1;
 
     el.hudName.textContent = name;
@@ -175,6 +176,15 @@ export const Views = {
     const meta = CATEGORIES[q.category] || { label: '', icon: '' };
     el.questionCategory.querySelector('.qc-icon').textContent = meta.icon;
     el.questionCategory.querySelector('.qc-label').textContent = meta.label;
+
+    // 배점은 모듈3이 계산해 넘겨 준 값을 그대로 그린다(점수 규칙은 뷰의 소관이 아니다).
+    // 값에 따라 등급 클래스를 달아 색만 달리한다.
+    const value = Number.isFinite(points) ? points : 0;
+    el.questionPoints.querySelector('.qp-value').textContent = String(value);
+    el.questionPoints.dataset.tier = q.difficulty || '';
+    el.questionPoints.setAttribute('aria-label', `배점 ${value}점`);
+    el.questionPoints.hidden = value <= 0;
+
     el.questionText.textContent = q.question;
 
     el.choices.replaceChildren(

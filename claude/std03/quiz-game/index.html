@@ -304,7 +304,13 @@
       <p class="question-category" id="questionCategory">
         <span class="qc-icon" aria-hidden="true"></span><span class="qc-label"></span>
       </p>
-      <h2 class="question-text" id="questionText">문제가 여기에 표시됩니다.</h2>
+      <!-- 배점 뱃지 + 문제. 맞혔을 때 얻는 점수를 문제 앞에 크게 보여 준다. -->
+      <div class="question-head">
+        <p class="question-points" id="questionPoints">
+          <span class="qp-value">10</span><span class="qp-unit">점</span>
+        </p>
+        <h2 class="question-text" id="questionText">문제가 여기에 표시됩니다.</h2>
+      </div>
       <!-- 보기 버튼은 data-index만 갖고, 클릭 바인딩은 main.js가 한다 -->
       <div class="choices" id="choices"></div>
     </div>
