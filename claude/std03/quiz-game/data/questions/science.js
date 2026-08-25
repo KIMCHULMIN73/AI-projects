@@ -122,8 +122,8 @@ export const SCIENCE = [
     category: C,
     difficulty: 'low',
     question: '원소기호 Fe가 나타내는 원소는?',
-    choices: ['금', '납', '구리', '철'],
-    answerIndex: 3,
+    choices: ['금', '철', '구리', '납'],
+    answerIndex: 1,
     explanation: 'Fe는 철의 라틴어 이름 ferrum에서 왔다. 구리는 Cu, 납은 Pb, 금은 Au다.',
   },
   {
