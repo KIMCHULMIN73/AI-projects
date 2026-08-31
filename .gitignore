@@ -1,0 +1,19 @@
+# 파이썬 바이트코드 캐시
+# tools/ 아래 개발용 스크립트를 돌리면 자동으로 생긴다. 소스가 아니라 산출물이다.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 가상환경
+# std01의 .venv는 파이썬이 만든 자체 .gitignore로도 제외되지만, 여기에도 적어 둔다.
+.venv/
+venv/
+ENV/
+
+# 편집기 · OS가 남기는 것
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
