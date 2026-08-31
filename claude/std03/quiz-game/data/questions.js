@@ -46,7 +46,11 @@ export const CATEGORY_ORDER = [
  */
 export const DIFFICULTY_ORDER = ['bottom', 'low', 'mid', 'high', 'top'];
 
-/** 분야별 400문항(각 100문항). 순서는 CATEGORY_ORDER를 따른다. */
+/**
+ * 분야별 문항을 합친 전체 은행. 순서는 CATEGORY_ORDER를 따른다.
+ * 총 개수는 고정이 아니다 — /quiz-add로 분야마다 다르게 늘어난다.
+ * 한 판에 나가는 문제 수(40)는 은행 크기와 무관하게 storage.js가 정한다.
+ */
 export const QUESTION_BANK = [
   ...KOREAN_HISTORY,
   ...SCIENCE,

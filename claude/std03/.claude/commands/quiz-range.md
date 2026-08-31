@@ -33,7 +33,7 @@ allowed-tools: Bash, Read, Grep
 ## 1. 세기
 
 ```bash
-cd quiz-game && python3 - "$1" "$2" "$3" <<'PY'
+cd quiz-game && python3 - "$ARGUMENTS" <<'PY'
 import re, sys, unicodedata
 from collections import Counter
 
@@ -64,7 +64,7 @@ PREFIX  = {'KH':'korean-history','SC':'science','WG':'world-geography','AC':'art
 DIFS = [('top','최상',10,50), ('high','상',20,40), ('mid','중',40,30),
         ('low','하',20,20), ('bottom','최하',10,10)]
 
-args = [a.strip() for a in sys.argv[1:] if a.strip()]
+args = sys.argv[1].split() if len(sys.argv) > 1 else []
 if not args:
     print("인수가 없습니다.  예: /quiz-range 한국사 10 20")
     sys.exit(1)

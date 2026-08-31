@@ -34,9 +34,17 @@ DIFFICULTY_ORDER = ["bottom", "low", "mid", "high", "top"]  # storage.js와 동�
 DIFFICULTY_QUOTA = {"top": 1, "high": 2, "mid": 4, "low": 2, "bottom": 1}
 QUESTIONS_PER_CATEGORY = sum(DIFFICULTY_QUOTA.values())
 
-# 분야별 문제 은행이 갖춰야 할 구성(요청 비율 10:20:40:20:10).
-EXPECTED_BANK_MIX = {"top": 10, "high": 20, "mid": 40, "low": 20, "bottom": 10}
-EXPECTED_PER_CATEGORY = sum(EXPECTED_BANK_MIX.values())
+# 분야별 문제 은행이 갖춰야 할 구성. 처음에는 네 분야 모두 요청 비율 10:20:40:20:10이었다.
+# /quiz-add로 한 난이도만 늘리면 분야마다 구성이 달라지므로 분야별로 적어 둔다.
+# 문항을 추가하면 이 표도 함께 갱신해야 한다 — tools/insert_questions.py가 자동으로 고친다.
+# 비율이 달라져도 샘플링은 깨지지 않는다(DIFFICULTY_QUOTA만 채우면 된다). 이 검사는
+# "의도치 않게 구성이 흘러내렸는지"를 보는 것이므로, 의도적으로 늘렸으면 표를 고치는 게 맞다.
+EXPECTED_BANK_MIX = {
+    "korean_history": {"top": 10, "high": 20, "mid": 40, "low": 20, "bottom": 10},
+    "science": {"top": 10, "high": 30, "mid": 40, "low": 20, "bottom": 10},
+    "world_geography": {"top": 10, "high": 20, "mid": 40, "low": 20, "bottom": 10},
+    "arts_culture": {"top": 10, "high": 20, "mid": 40, "low": 20, "bottom": 10},
+}
 
 OBJECT_RE = re.compile(r"\{\s*\n\s*id:\s*'([^']+)',(.*?)\n  \},", re.S)
 FIELD_RE = {
@@ -140,7 +148,7 @@ def main():
             failures.append(label)
 
     print(f"── 문제 은행 무결성 ({len(bank)}문항) ──")
-    expected_total = EXPECTED_PER_CATEGORY * len(CATEGORY_ORDER)
+    expected_total = sum(sum(mix.values()) for mix in EXPECTED_BANK_MIX.values())
     check(f"전체 {expected_total}문항", len(bank) == expected_total, f"{len(bank)}문항")
 
     ids = [q["id"] for q in bank]
@@ -168,16 +176,15 @@ def main():
     no_explanation = [q["id"] for q in bank if not q["explanation"].strip()]
     check("해설 존재(전 문항 필수)", not no_explanation, ", ".join(no_explanation))
 
-    print("\n── 분야별 문제 은행 구성 (최상10/상20/중40/하20/최하10) ──")
+    print("\n── 분야별 문제 은행 구성 (EXPECTED_BANK_MIX와 대조) ──")
     by_category = defaultdict(Counter)
     for question in bank:
         by_category[question["category"]][question["difficulty"]] += 1
     for category in CATEGORY_ORDER:
         counts = by_category[category]
         total = sum(counts.values())
-        ok = total == EXPECTED_PER_CATEGORY and all(
-            counts[d] == EXPECTED_BANK_MIX[d] for d in EXPECTED_BANK_MIX
-        )
+        mix = EXPECTED_BANK_MIX[category]
+        ok = total == sum(mix.values()) and all(counts[d] == mix[d] for d in mix)
         detail = f"총 {total} / " + " ".join(
             f"{d}:{counts[d]}" for d in ["top", "high", "mid", "low", "bottom"]
         )
