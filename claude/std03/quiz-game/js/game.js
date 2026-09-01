@@ -37,6 +37,17 @@ const state = {
   score: INITIAL_SCORE,
   /** category → { correct, total } */
   tally: {},
+  /** 판이 시작된 시각(ms). 한 판의 총 소요시간을 재는 데 쓴다. */
+  startedAt: 0,
+  /** 현재 문제가 화면에 뜬 시각(ms). 문항별 소요시간을 재는 데 쓴다. */
+  shownAt: 0,
+  /**
+   * 문항별 응답 로그. **선생님 모드(문항 분석)의 유일한 근거다.**
+   * 이게 없으면 "어느 문항에서 무너졌나"를 영원히 알 수 없다.
+   * 기록에 실려 나가되, 이 배열을 읽는 쪽이 배점을 다시 계산해선 안 된다
+   * (점수 규칙은 모듈3의 소관이다 — delta는 계산 근거가 아니라 기록이다).
+   */
+  responses: [],
 };
 
 function resetTally() {
@@ -59,6 +70,7 @@ function renderCurrentQuestion() {
   const question = state.questions[state.index];
   if (!question) return;
 
+  state.shownAt = Date.now();
   Views.setBackground(question.category);
   if (state.index > 0 && state.index % BGM_SWITCH_EVERY === 0) {
     Audio.nextBgm(); // 첫 곡은 startBgm이 이미 재생 중
@@ -105,6 +117,8 @@ function beginRound() {
   state.index = 0;
   state.score = INITIAL_SCORE;
   state.phase = 'PLAYING';
+  state.startedAt = Date.now();
+  state.responses = [];
   resetTally();
   renderCurrentQuestion();
 }
@@ -136,6 +150,17 @@ export const Game = {
     const isCorrect = index === question.answerIndex;
     const delta = isCorrect ? pointsFor(question) : WRONG_DELTA;
     state.score += delta;
+
+    state.responses.push({
+      id: question.id,
+      category: question.category,
+      difficulty: question.difficulty,
+      selectedIndex: index,
+      answerIndex: question.answerIndex,
+      correct: isCorrect,
+      delta,
+      elapsedMs: Date.now() - state.shownAt,
+    });
 
     const tally = state.tally[question.category];
     if (tally) {
@@ -184,6 +209,10 @@ export const Game = {
 
     const summary = buildSummary();
     const record = {
+      // 스키마 표기가 있어야 뒤에 읽는 쪽이 구버전 기록과 구분할 수 있다.
+      // 이 표기가 없는 기록 = responses가 없는 기록이고, 그건 문항 분석에서
+      // 빠질 뿐 총점 통계에는 그대로 들어간다.
+      schema: 'quiz-record/v2',
       name: summary.name,
       score: summary.score,
       correctCount: summary.correctCount,
@@ -191,6 +220,10 @@ export const Game = {
       accuracy: summary.accuracy,
       byCategory: summary.byCategory,
       playedAt: new Date().toISOString(),
+      durationMs: Date.now() - state.startedAt,
+      // 다음 판이 beginRound에서 새 배열을 넣으므로 참조를 그대로 둬도 되지만,
+      // 기록이 나중에 바뀌지 않는다는 것을 코드로 못박아 둔다.
+      responses: state.responses.slice(),
     };
 
     const saved = Storage.saveRecord(record);

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>선생님 모드 — 누가누가 잘하나 좌충우돌 퀴즈게임</title>
+<link rel="stylesheet" href="css/teacher.css">
+</head>
+<body>
+
+<div id="fatal" class="fatal" hidden></div>
+
+<header class="topbar">
+  <div class="topbar-main">
+    <h1>📊 선생님 모드</h1>
+    <p id="summaryLine" class="summary">불러오는 중…</p>
+  </div>
+  <div class="topbar-meta">
+    <span class="chip" id="unitChip">참가 단위: 판 1회 = 1명 (같은 이름도 따로 셈)</span>
+    <span class="chip" id="generatedChip">생성: —</span>
+    <span class="chip chip-warn" id="anonChip" hidden>가명 표시 중</span>
+  </div>
+</header>
+
+<main>
+
+<section class="card">
+  <div class="card-head">
+    <h2>순위표</h2>
+    <input type="search" id="searchBox" placeholder="라벨 검색" aria-label="라벨 검색">
+  </div>
+  <p class="hint">열 머리를 누르면 정렬됩니다. 줄을 누르면 아래 분포에 위치가 표시되고 상세가 열립니다.</p>
+  <div class="table-wrap">
+    <table class="rank-table">
+      <thead>
+        <tr id="rankHead">
+          <th data-sort="rank" scope="col">석차</th>
+          <th data-sort="label" scope="col">라벨</th>
+          <th data-sort="score" scope="col">점수</th>
+          <th data-sort="accuracy" scope="col">정답률</th>
+          <th data-sort="z" scope="col">z</th>
+          <th data-sort="percentile" scope="col">백분위</th>
+          <th data-sort="cat0" scope="col" id="th-cat0"></th>
+          <th data-sort="cat1" scope="col" id="th-cat1"></th>
+          <th data-sort="cat2" scope="col" id="th-cat2"></th>
+          <th data-sort="cat3" scope="col" id="th-cat3"></th>
+        </tr>
+      </thead>
+      <tbody id="rankBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>점수 분포</h2>
+  <p class="hint">세로선이 평균, 옅은 띠가 ±1 표준편차 구간입니다. 위에서 한 줄을 고르면 그 자리에 ▲가 섭니다.</p>
+  <div id="histogram" class="histogram"></div>
+</section>
+
+<div class="two-col">
+  <section class="card">
+    <h2>분야별 평균 정답률</h2>
+    <div id="categoryList" class="bars"></div>
+  </section>
+
+  <section class="card">
+    <h2>난이도 검증</h2>
+    <p class="hint">최하 → 최상으로 내려가는 계단이면 정상입니다. 흐트러진 자리는 붉게 표시됩니다.</p>
+    <div id="difficultyList" class="bars"></div>
+  </section>
+</div>
+
+<section class="card" id="detailCard" hidden>
+  <div class="card-head">
+    <h2 id="detailTitle">참가자 상세</h2>
+    <button type="button" id="detailClose" class="ghost-btn">닫기</button>
+  </div>
+  <div id="detailBody" class="detail"></div>
+</section>
+
+<section class="card">
+  <h2>재검토 후보 문항</h2>
+  <p class="coverage" id="itemCoverage"></p>
+  <div id="itemList"></div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <p>이 화면은 <code>data/results/analysis.json</code>을 그리기만 합니다. 수치는 전부
+     <code>tools/results_stats.py</code>와 <code>tools/results_compare.py</code>가 계산한 것입니다.</p>
+</footer>
+
+<script type="module" src="js/teacher/dashboard-main.js"></script>
+
+<!-- file://로 열면 브라우저가 fetch를 CORS로 막아 analysis.json을 읽지 못한다.
+     그러면 화면이 텅 빈 채로 이유를 알 수 없다. module 스크립트는 바로 그 상황에서
+     실행 자체가 안 되므로, 이 안내는 반드시 일반 script여야 한다. -->
+<script>
+(function () {
+  if (location.protocol !== 'file:') return;
+  var box = document.getElementById('fatal');
+  box.hidden = false;
+  box.textContent =
+    '이 페이지는 파일을 직접 열면 동작하지 않습니다. 터미널에서 quiz-game 폴더의 ' +
+    './run.sh 를 실행한 뒤, 안내되는 주소 뒤에 /teacher.html 을 붙여 여세요.';
+})();
+</script>
+
+</body>
+</html>

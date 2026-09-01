@@ -310,6 +310,16 @@ body {
 
 .btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
 
+/* 선생님 모드 반출 버튼. 랭킹 화면에서 "다시 시작하기" 옆에 물러나 앉는 보조 버튼이라
+   테두리만 두고 배경을 비운다. 기존 .btn-primary/.btn-secondary는 건드리지 않는다. */
+.btn-ghost {
+  background: transparent;
+  color: var(--ink-soft, #5b6076);
+  border: 2px solid rgba(0, 0, 0, .14);
+  font-size: .92rem;
+}
+.btn-ghost:hover:not(:disabled) { background: rgba(0, 0, 0, .05); }
+
 .button-row {
   display: flex;
   gap: 14px;

@@ -4,6 +4,7 @@
 import { Views } from './views.js';
 import { Game } from './game.js';
 import { Audio } from './audio.js';
+import { TeacherExport } from './teacher/export.js';
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -56,6 +57,20 @@ function bind() {
     Game.restart();
     playerName.value = '';
     syncStartButton();
+  });
+
+  /* ── 성적 반출 (선생님 모드 1단계) ────────────────────────
+     export.js는 결과 객체만 돌려준다. 화면에 알리는 것은 여기 몫이다.
+     **실패를 조용히 삼키지 않는다** — 반출 실패를 모르고 넘어가면
+     그 사람 성적이 통째로 사라진다(소리 실패와 성격이 다르다). */
+  $('#exportBtn').addEventListener('click', () => {
+    const r = TeacherExport.downloadExport();
+    showToast(r.ok ? `📤 ${r.count}판 저장: ${r.filename}` : `⚠️ ${r.error}`);
+  });
+
+  $('#copyBtn').addEventListener('click', async () => {
+    const r = await TeacherExport.copyExport();
+    showToast(r.ok ? `📋 ${r.count}판 복사됨` : `⚠️ ${r.error}`);
   });
 
   /* ── 키보드 단축키 ─────────────────────────────────────── */

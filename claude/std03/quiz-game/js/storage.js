@@ -153,6 +153,18 @@ export const Storage = {
     }
   },
 
+  /**
+   * 저장된 순서 그대로의 기록 전체.
+   *
+   * getRankings()와 달리 **정렬하지 않는다** — 랭킹 정렬은 화면용이고,
+   * 반출(선생님 모드 1단계)은 있는 그대로여야 하기 때문이다.
+   * localStorage 접근을 모듈1 안에 묶어 두려고 여기에 둔다: 이게 없으면
+   * 반출 모듈이 'quiz.rankings' 키를 제 손으로 알아야 해서 키가 두 곳에 산다.
+   */
+  getAllRecords() {
+    return readRankings();
+  },
+
   /** 점수 내림차순, 동점이면 최신 기록이 먼저 오도록 정렬해 반환한다. */
   getRankings() {
     return readRankings().slice().sort((a, b) => {
