@@ -23,6 +23,14 @@ cd quiz-game
 NO_OPEN=1 ./run.sh    # 브라우저 자동 실행 없이 서버만
 ```
 
+`std03` 루트에도 같은 이름의 `run.sh`가 있어 `cd quiz-game` 없이 바로 띄울 수 있다. 이쪽은 **인수와 환경변수를 그대로 넘겨 `quiz-game/run.sh`를 `exec` 하는 얇은 래퍼일 뿐**이다 — 실행 로직을 복사해 두면 두 벌이 반드시 갈라지므로 포트 탐색·브라우저 자동 실행은 한 곳에만 둔다. 어느 디렉터리에서 불러도 `$0` 기준으로 경로를 잡으므로 절대경로로 호출해도 동작한다.
+
+```bash
+./run.sh              # std03 루트에서. 아래는 quiz-game/run.sh와 동일하게 동작한다
+./run.sh 8080
+NO_OPEN=1 ./run.sh
+```
+
 - 이 리포지토리 환경에는 **다른 python http.server가 8000번을 이미 쓰고 있을 수 있다.** 그래서 기본 실행은 빈 포트를 자동으로 찾는다. 예전처럼 8000번에 그냥 바인딩하면 파이썬 트레이스백이 그대로 튀어나왔다.
 - 외부 노출을 막기 위해 `127.0.0.1`에만 바인딩한다.
 - 그래픽 환경(`DISPLAY`/`WAYLAND_DISPLAY`)이 있으면 `xdg-open`으로 브라우저를 자동으로 연다. SSH 등 화면이 없는 환경에서는 자동으로 건너뛴다.
@@ -67,6 +75,7 @@ std03/
   QUIZ_PRD.md                      # 사양 원본
   QUIZ_PROMPT.CLAUDE               # PRD를 만들어낸 최초 요청문(원본 의도의 근거)
   CLAUDE.md                        # 이 파일
+  run.sh                           # quiz-game/run.sh로 넘기는 래퍼(루트에서 바로 실행용)
   .claude/commands/                # 커스텀 슬래시 명령어
     quiz-validate.md               # 모호한 최상급 표현 점검 (분야 단위)
     quiz-range.md                  # 번호 구간의 난이도·정답 위치 분포 점검
