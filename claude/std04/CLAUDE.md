@@ -2,18 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 현재 상태 — 앱 코드는 아직 없다
+## 프로젝트 — 냉장고 사진으로 레시피 추천
 
-지금 있는 것은 **OpenRouter 키를 안전하게 다루기 위한 바탕**뿐이고, 앱 자체는 한 줄도 없다.
+냉장고 사진을 올리면 식재료를 뽑아내고, 그 재료로 만들 레시피를 추천하고, 프로필별로 저장하는 웹 앱이다.
 
-- `config.py` — 키를 찾아 주는 로더. **키를 파일에서 읽는 코드는 이것 하나뿐이어야 한다.**
-- `.env.example` — 설정 방법을 적어 둔 이름표. 커밋되는 유일한 env 파일이다(실제 값 없음).
-- `tools/check_secrets.py` — 키가 새어 나갈 곳을 훑는 점검기. 개발 전용이다.
-- `tools/smoke_test_api.py` — 두 모델이 실제로 응답하는지 확인하는 연기 테스트. 개발 전용이다.
-- `.gitignore` — 비밀 파일 패턴.
-- `Models` — 쓸 모델 메모. `.gitignore`에 걸려 있어 커밋되지 않는다(사용자 결정).
+**사양은 [PRD.md](PRD.md)가 원본이다.** 규칙·데이터 계약·단계 경계를 바꿔야 하면 PRD와 이 문서를 함께 고칠 것.
 
-**첫 코드를 넣는 사람이 이 절을 지우고 개요·실행법·아키텍처로 바꿔 써야 한다.**
+```
+PRD.md              전체 색인 · 확정된 결정과 근거 · 실측 수치
+PRD_step1.md        이미지 → 식재료          (아직 구현 없음)
+PRD_step2.md        식재료 → 레시피          (아직 구현 없음)
+PRD_step3.md        프로필 + 레시피 보관함   (아직 구현 없음)
+units/              여러 단계가 공유하는 사양 6개
+config.py           키를 읽는 유일한 통로
+tools/              개발 전용 (앱이 로드하지 않는다)
+.claude/commands/   /prd-step · /unit · /prd-check · /api-measure
+```
+
+**현재 상태: 사양만 있고 앱 코드는 한 줄도 없다.** `server.py`·`index.html`·`app.js`는 아직 없다. 구현은 `/prd-step 1`로 시작한다.
+
+### 구조 — 왜 서버가 있는가
+
+```
+브라우저 ──fetch──▶ 로컬 프록시(server.py) ──▶ OpenRouter
+```
+
+웹 앱인데 **브라우저가 OpenRouter를 직접 부를 수 없기 때문이다.** 부르는 순간 키가 노출된다(아래 "절대 하지 말 것"). 프록시는 그 제약 때문에 생겼고, 덕분에 브라우저는 모델 이름조차 모른다 — 모델 교체는 `Models` 파일만 고치면 끝난다.
 
 ## 쓰는 모델 — `Models` 파일이 원본이다
 
