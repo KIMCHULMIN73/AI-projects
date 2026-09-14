@@ -56,9 +56,10 @@ NO_OPEN=1 python3 server.py  # 브라우저 자동 실행 없이
 
 | code | 언제 | retryable | 화면 문구(예) |
 |---|---|---|---|
-| `NO_KEY` | `config.MissingKeyError` | false | 키가 설정되지 않았습니다. `.env.example`을 보세요. |
+| `NO_KEY` | `config.MissingKeyError`, 또는 OpenRouter 401·403(키 거부) | false | 키가 설정되지 않았습니다. `.env.example`을 보세요. / 키가 거부되었습니다(폐기되었거나 잘못된 키). |
+| `NO_MODEL` | `Models` 파일이 없거나 해당 모델 줄이 없음 | false | `Models` 파일에 모델이 적혀 있지 않습니다. CLAUDE.md의 모델 표를 보세요. |
 | `RATE_LIMIT` | OpenRouter 429 | true | 무료 모델 사용량이 찼습니다. 잠시 후 다시 시도하세요. |
-| `UPSTREAM` | OpenRouter 5xx | true | 모델 서버가 응답하지 않습니다. |
+| `UPSTREAM` | OpenRouter 5xx·연결 실패·200 안의 `error` (그 밖의 4xx와 프록시 내부 오류도 여기로 — 4xx는 retryable false) | true | 모델 서버가 응답하지 않습니다. |
 | `TIMEOUT` | 응답 없음 | true | 시간이 너무 오래 걸립니다. |
 | `BAD_OUTPUT` | JSON 파싱 실패 (→ `UNIT_json_contract.md`) | true | 결과를 읽지 못했습니다. 다시 시도하세요. |
 | `BAD_REQUEST` | 입력 검증 실패 | false | (입력 문제를 구체적으로) |
