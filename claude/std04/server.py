@@ -18,8 +18,10 @@ import binascii
 import json
 import os
 import re
+import secrets
 import shutil
 import socket
+import string
 import subprocess
 import sys
 import threading
@@ -137,7 +139,7 @@ def _can_retry(deadline: float) -> bool:
 
 
 def call_model(model: str, messages: list, *, max_tokens: int, temperature: float,
-               deadline: float, response_format: dict | None = None) -> dict:
+               deadline: float, response_format: dict | None = None, extra: dict | None = None) -> dict:
     """한 번 호출하고 `{"content", "finish", "tokens_in", "tokens_out", "attempts"}`를 돌려준다.
 
     `deadline`은 time.monotonic() 기준의 **총 예산 끝**이다. 시도마다 새 타임아웃을
@@ -147,6 +149,8 @@ def call_model(model: str, messages: list, *, max_tokens: int, temperature: floa
             "temperature": temperature}
     if response_format:
         body["response_format"] = response_format
+    if extra:                      # reasoning·seed 등 단계별 고정값. 요청 본문에서 오는 값이 아니다.
+        body.update(extra)
     data = json.dumps(body).encode()
 
     attempts = 0
@@ -408,6 +412,146 @@ def handle_vision(body: dict) -> tuple[dict, dict]:
     return to_ingredient_list(raw), meta
 
 
+# ── 2단계: 식재료 → 레시피 (→ PRD_step2.md) ──────────────────────────────
+
+# 텍스트 모델도 추론형이다. 1500이면 매번 잘렸고, 옵션 없이는 3,000~6,000토큰을 넘나들었다.
+# effort=low로 8.5~9.6초·약 3,000토큰(2026-09-14 실측). 추론을 끄면 빠르지만 프롬프트 규칙을 어겼다.
+RECIPE_PARAMS = {"max_tokens": 8000, "temperature": 0.3}
+RECIPE_REASONING = {"effort": "low"}
+RECIPE_BUDGET_S = 30
+RECIPE_COUNTS = (2, 3)
+DIFFICULTY = ["쉬움", "보통", "어려움"]
+
+# PRD_step2.md "프롬프트" 그대로. {count} 자리만 바꾼다(JSON 중괄호 때문에 format을 쓰지 않는다).
+RECIPE_RULES = """
+이 재료로 만들 요리 {count}개를 추천하라.
+
+규칙:
+- 위 재료를 최대한 쓰고, 꼭 필요한 추가 재료만 missing에 적어라.
+- 소금·후추·식용유·물은 어느 집에나 있다고 보고 missing에 넣지 마라.
+- uses에는 위 재료 목록의 이름을 그대로 써라. 바꿔 쓰지 마라.
+- steps는 한 문장씩, 5~8단계로.
+
+반드시 아래 JSON만 출력하라. 설명·인사말·마크다운 코드펜스 금지.
+{"recipes":[{"title":"","summary":"","time_minutes":0,"difficulty":"쉬움",
+"servings":2,"uses":[""],"missing":[""],"steps":[""],"tips":""}]}"""
+
+TITLE_MAX, SUMMARY_MAX, STEP_MAX, TIPS_MAX, STEPS_MAX = 60, 120, 300, 300, 20
+
+
+def read_recipe_request(body) -> tuple[list[dict], int]:
+    """`{"ingredients": [{"name", "quantity"}], "count"}`만 받는다. 그 밖의 필드는 무시한다.
+
+    IngredientList를 통째로 보내도 confidence·source 같은 1단계 사정은 모델에게 가지 않는다.
+    """
+    if not isinstance(body, dict) or not isinstance(body.get("ingredients"), list):
+        raise ApiError("BAD_REQUEST", "재료 목록이 없습니다.")
+    count = body.get("count", 3)
+    if isinstance(count, bool) or count not in RECIPE_COUNTS:
+        raise ApiError("BAD_REQUEST", "추천 개수는 2 또는 3이어야 합니다.")
+    seen, ingredients = set(), []
+    for it in body["ingredients"][:LIST_MAX]:
+        if not isinstance(it, dict):
+            continue
+        name, _ = _clean(it.get("name"), NAME_MAX)
+        if not name or name in seen:
+            continue
+        quantity, _ = _clean(it.get("quantity"), NAME_MAX)
+        seen.add(name)
+        ingredients.append({"name": name, "quantity": "" if quantity == "미상" else quantity})
+    if not ingredients:
+        raise ApiError("BAD_REQUEST", "재료를 하나 이상 넣어 주세요.")
+    return ingredients, int(count)
+
+
+def recipe_prompt(ingredients: list[dict], count: int) -> str:
+    listed = ", ".join(f"{i['name']} {i['quantity']}".strip() for i in ingredients)
+    return "재료: " + listed + RECIPE_RULES.replace("{count}", str(count))
+
+
+def _int_in(value, lo: int, hi: int) -> int | None:
+    """`20`, `20.0`, `"20분"`을 20으로. 범위 밖이거나 숫자가 없으면 None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        n = int(value)
+    else:
+        m = re.search(r"\d+", str(value or ""))
+        if not m:
+            return None
+        n = int(m.group())
+    return n if lo <= n <= hi else None
+
+
+def _str_list(value, max_items: int, max_chars: int, *, dedupe: bool = True) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for v in value[:max_items]:
+        text, _ = _clean(v, max_chars)
+        if text and not (dedupe and text in out):
+            out.append(text)
+    return out
+
+
+def _recipe_id_prefix(now: datetime) -> str:
+    # 초 단위 시각 + 요청마다 무작위 4자. 같은 초에 두 번 눌러도 겹치지 않는다(→ PRD_step2 `id`).
+    rand = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(4))
+    return f"r-{now:%Y%m%d%H%M%S}-{rand}"
+
+
+def to_recipes(raw: dict, count: int) -> dict:
+    """모델 출력을 `Recipe` 계약으로 옮기면서 값의 형태를 검증한다.
+
+    정렬과 `uses`→`missing` 옮기기는 하지 않는다 — 그건 화면의 일이다(→ UNIT_proxy).
+    """
+    now = datetime.now().astimezone()
+    prefix = _recipe_id_prefix(now)
+    recipes = []
+    for rc in raw.get("recipes") or []:
+        if len(recipes) >= count:
+            break
+        if not isinstance(rc, dict):
+            continue
+        title, _ = _clean(rc.get("title"), TITLE_MAX)
+        steps = _str_list(rc.get("steps"), STEPS_MAX, STEP_MAX, dedupe=False)
+        if not title or not steps:            # 이름이나 조리 순서가 없으면 쓸 수 없다
+            continue
+        recipes.append({
+            "id": f"{prefix}-{len(recipes) + 1}",
+            "title": title,
+            "summary": _clean(rc.get("summary"), SUMMARY_MAX)[0],
+            "time_minutes": _int_in(rc.get("time_minutes"), 1, 600),
+            "difficulty": rc.get("difficulty") if rc.get("difficulty") in DIFFICULTY else "보통",
+            "servings": _int_in(rc.get("servings"), 1, 20),
+            "uses": _str_list(rc.get("uses"), LIST_MAX, NAME_MAX),
+            "missing": _str_list(rc.get("missing"), LIST_MAX, NAME_MAX),
+            "steps": steps,
+            "tips": _clean(rc.get("tips"), TIPS_MAX)[0],
+            "generated_at": now.isoformat(timespec="seconds"),
+        })
+    if not recipes:
+        raise ApiError("BAD_OUTPUT", log="쓸 수 있는 레시피가 없음(제목·조리 순서 누락)")
+    return {"recipes": recipes}
+
+
+def _recipe_shape_ok(parsed) -> bool:
+    return isinstance(parsed, dict) and isinstance(parsed.get("recipes"), list) and bool(parsed["recipes"])
+
+
+def handle_recipe(body: dict) -> tuple[dict, dict]:
+    ingredients, count = read_recipe_request(body)
+    model = require_model("text")
+    deadline = time.monotonic() + RECIPE_BUDGET_S
+    # seed는 요청마다 새로 뽑는다. 같은 재료로 다시 눌러도 다른 요리가 나올 수 있게(→ PRD_step2 "프롬프트").
+    seed = secrets.randbelow(2**31 - 1) + 1
+    messages = [{"role": "user", "content": recipe_prompt(ingredients, count)}]
+    raw, meta = ask_for_json(model, messages, shape_ok=_recipe_shape_ok, deadline=deadline,
+                             extra={"reasoning": RECIPE_REASONING, "seed": seed}, **RECIPE_PARAMS)
+    meta["seed"] = seed
+    return to_recipes(raw, count), meta
+
+
 # ── HTTP ────────────────────────────────────────────────────────────────
 
 def log(line: str) -> None:
@@ -485,7 +629,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self._error(ApiError("BAD_REQUEST", "허용되지 않은 주소입니다."))
         path = self.path.split("?", 1)[0]
-        routes = {"/api/vision": handle_vision}
+        routes = {"/api/vision": handle_vision, "/api/recipe": handle_recipe}
         if path not in routes:
             return self._send(404, b"not found", "text/plain; charset=utf-8")
 

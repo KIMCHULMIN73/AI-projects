@@ -1,11 +1,12 @@
 // 1단계 화면: 사진 → (프록시) → 식재료 목록 편집. (→ PRD_step1.md)
+// 2단계 화면: 식재료 목록 → (프록시) → 레시피 카드. (→ PRD_step2.md)
 //
 // 이 파일은 키도 모델 이름도 모른다. /api/* 만 부른다.
 
 import { KEYS, readJSON, writeJSON } from './storage.js';
 
-// 스키마의 enum이자 화면 그룹의 순서. server.py의 CATEGORIES와 같아야 한다.
-// 늘리려면 스키마·프롬프트(server.py)·화면(여기) 세 곳을 함께 고친다.
+// 프롬프트에 박는 목록이자 화면 그룹의 순서. server.py의 CATEGORIES와 같아야 한다.
+// 늘리려면 프롬프트·값 검증(server.py)·화면(여기) 세 곳을 함께 고친다.
 const CATEGORIES = ['채소', '과일', '육류', '해산물', '유제품', '달걀', '곡물면', '양념소스', '가공식품', '음료', '기타'];
 const CONFIDENCE = ['high', 'medium', 'low'];
 
@@ -14,23 +15,32 @@ const MAX_EDGE = 768;
 const JPEG_QUALITY = 0.85;
 const MAX_DATA_URL = 4 * 1024 * 1024;
 
-// 긴 대기 규칙 (→ UNIT_ui_state.md)
-const EXPECT_S = 20;
-const SLOW_AFTER_S = 30;
-// 프록시가 60초 총 예산으로 TIMEOUT을 돌려준다. 브라우저는 그걸 기다리고,
-// 프록시가 아예 멈춘 경우에만 이 여유분 뒤에 스스로 끊는다.
-const CLIENT_GIVE_UP_S = 75;
+// 긴 대기 규칙 (→ UNIT_ui_state.md 단계별 표). 프록시가 총 예산으로 TIMEOUT을 돌려준다.
+// 브라우저는 그걸 기다리고, 프록시가 아예 멈춘 경우에만 giveUp 뒤에 스스로 끊는다.
+const WAIT = {
+  vision: { expect: 20, slowAfter: 30, giveUp: 75 },
+  recipe: { expect: 10, slowAfter: 20, giveUp: 40 },
+};
+const RECIPE_COUNT = 3;
 
 // 프록시가 문구를 만들 수 없는 경우(프록시에 닿지 못함)만 화면이 직접 말한다.
 const MSG_PROXY_DOWN = '프록시(server.py)에 연결할 수 없습니다. 서버가 켜져 있는지 확인하세요.';
 const MSG_TIMEOUT = '시간이 너무 오래 걸립니다.';
 const MSG_IDLE = '냉장고 사진을 올려 주세요. 분석은 보통 20초쯤 걸립니다.';
+const MSG_SLOW = '평소보다 오래 걸리고 있습니다. 조금만 더 기다려 주세요.';
 
 const $ = (id) => document.getElementById(id);
 
 let list = loadList();   // IngredientList — 2단계가 받는 계약
 let photo = null;        // { dataUrl, width, height, origWidth, origHeight } — 메모리에만 둔다
-let job = null;          // 진행 중인 분석 { controller, reason }
+let recipes = [];        // 마지막 추천 결과(Recipe[]) — 메모리에만. 저장은 3단계 일이다.
+let usedNames = [];      // 그 추천에 보낸 재료 이름
+
+// 화면의 비동기 작업 두 개. 각자 상태 표시 요소와 진행 중인 작업을 가진다.
+const panels = {
+  vision: { status: 'status', elapsed: 'elapsed', error: 'error', errorMsg: 'error-msg', job: null },
+  recipe: { status: 'recipe-status', elapsed: 'recipe-elapsed', error: 'recipe-error', errorMsg: 'recipe-error-msg', job: null },
+};
 
 // ── IngredientList ──────────────────────────────────────────────────────
 
@@ -104,36 +114,37 @@ async function checkHealth() {
 // ── 이미지 받기 · 축소 ──────────────────────────────────────────────────
 
 async function acceptFile(file, note = '') {
-  if (job || !file) return;              // 분석 중에는 사진을 바꾸지 않는다
-  hideError();
+  const panel = panels.vision;
+  if (panel.job || !file) return;        // 분석 중에는 사진을 바꾸지 않는다
+  hideError(panel);
   // 확장자 없는 파일은 type이 비어 온다. 비었으면 실제로 열어 보고 판단한다.
   if (file.type && !file.type.startsWith('image/')) {
-    showError('이미지 파일만 올릴 수 있습니다.', false);
+    showError(panel, '이미지 파일만 올릴 수 있습니다.', false);
     return;
   }
-  setStatus('idle', '사진을 줄이는 중…');
+  setStatus(panel, 'idle', '사진을 줄이는 중…');
   try {
     photo = await shrink(file);
   } catch {
     photo = null;
     renderPreview();
     updateButtons();
-    setStatus('idle', MSG_IDLE);
-    showError('이미지를 읽지 못했습니다. JPEG·PNG 같은 사진 파일을 올려 주세요.', false);
+    setStatus(panel, 'idle', MSG_IDLE);
+    showError(panel, '이미지를 읽지 못했습니다. JPEG·PNG 같은 사진 파일을 올려 주세요.', false);
     return;
   }
   if (photo.dataUrl.length > MAX_DATA_URL) {
     photo = null;
     renderPreview();
     updateButtons();
-    setStatus('idle', MSG_IDLE);
-    showError('줄인 뒤에도 사진이 4MB를 넘습니다. 다른 사진을 올려 주세요.', false);
+    setStatus(panel, 'idle', MSG_IDLE);
+    showError(panel, '줄인 뒤에도 사진이 4MB를 넘습니다. 다른 사진을 올려 주세요.', false);
     return;
   }
   renderPreview();
   updateButtons();
   const replace = list.items.length ? ' 분석하면 지금 재료 목록이 새 결과로 바뀝니다.' : '';
-  setStatus('idle', `${note}[재료 분석]을 누르세요. 보통 ${EXPECT_S}초쯤 걸립니다.${replace}`);
+  setStatus(panel, 'idle', `${note}[재료 분석]을 누르세요. 보통 ${WAIT.vision.expect}초쯤 걸립니다.${replace}`);
 }
 
 /** 긴 변 768px · JPEG 0.85로 줄인다. 미리보기와 전송에 **같은** data URL을 쓴다. */
@@ -175,25 +186,29 @@ function renderPreview() {
   fig.hidden = false;
 }
 
-// ── 분석 ────────────────────────────────────────────────────────────────
+// ── 프록시 호출 — 두 단계가 함께 쓴다 (→ UNIT_ui_state.md) ────────────────
 
-async function analyze() {
-  if (!photo || job) return;
-  hideError();
+/**
+ * 프록시에 POST하고, 기다리는 동안 경과 초를 보여준다.
+ * 성공하면 응답 본문을, 실패·취소면 null을 돌려준다(오류 표시는 여기서 끝낸다).
+ * panel.job은 첫 await 전에 잡히므로 버튼을 연달아 눌러도 요청은 한 번만 나간다.
+ */
+async function postWithWait(panel, wait, url, payload, loadingText) {
   const controller = new AbortController();
-  job = { controller, reason: null };
+  panel.job = { controller, reason: null };
+  hideError(panel);
   const started = Date.now();
-  const giveUp = setTimeout(() => { job.reason = 'timeout'; controller.abort(); }, CLIENT_GIVE_UP_S * 1000);
+  const giveUp = setTimeout(() => { panel.job.reason = 'timeout'; controller.abort(); }, wait.giveUp * 1000);
 
   // 낭독기에는 상태가 바뀔 때만 읽히게 하고, 매초 바뀌는 숫자는 따로 둔다.
   let slow = false;
-  setStatus('loading', `분석 중입니다. 보통 ${EXPECT_S}초쯤 걸립니다.`);
+  setStatus(panel, 'loading', loadingText);
   const tick = () => {
     const s = Math.floor((Date.now() - started) / 1000);
-    $('elapsed').textContent = `${s}초째`;
-    if (!slow && s >= SLOW_AFTER_S) {
+    $(panel.elapsed).textContent = `${s}초째`;
+    if (!slow && s >= wait.slowAfter) {
       slow = true;
-      setStatus('loading', '평소보다 오래 걸리고 있습니다. 조금만 더 기다려 주세요.');
+      setStatus(panel, 'loading', MSG_SLOW);
     }
   };
   tick();
@@ -201,87 +216,228 @@ async function analyze() {
   updateButtons();
 
   try {
-    const res = await fetch('/api/vision', {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: photo.dataUrl }),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
     let body = null;
     try { body = await res.json(); } catch { /* 프록시가 아닌 무언가가 답했다 */ }
     if (!body || typeof body !== 'object') {
-      failed(MSG_PROXY_DOWN, true);
-      return;
+      failed(panel, MSG_PROXY_DOWN, true);
+      return null;
     }
     if (!body.ok) {
-      failed(body.error?.message || MSG_PROXY_DOWN, Boolean(body.error?.retryable));
-      return;
+      failed(panel, body.error?.message || MSG_PROXY_DOWN, Boolean(body.error?.retryable));
+      return null;
     }
-    list = sanitizeList(body.data);
-    saveList();
-    render();
-    const secs = Math.round((body.meta?.elapsed_ms ?? Date.now() - started) / 1000);
-    const n = list.items.length;
-    const review = list.items.filter(flagged).length;
-    if (n) {
-      setStatus('done', `재료 ${n}개를 찾았습니다 (${secs}초).`
-        + (review ? ` 노란색으로 표시된 ${review}개는 확인해 주세요.` : ''));
-    } else if (list.unsure.length) {
-      setStatus('done', `확실한 식재료는 찾지 못했습니다 (${secs}초). 아래 "무엇인가요?" 목록을 확인해 주세요.`);
-    } else {
-      setStatus('done', `사진에서 식재료를 찾지 못했습니다 (${secs}초). 다른 사진을 올리거나 직접 추가하세요.`);
-    }
+    body.elapsedS = Math.round((body.meta?.elapsed_ms ?? Date.now() - started) / 1000);
+    return body;
   } catch (err) {
-    if (err?.name === 'AbortError' && job.reason === 'timeout') {
-      failed(MSG_TIMEOUT, true);
+    if (err?.name === 'AbortError' && panel.job.reason === 'timeout') {
+      failed(panel, MSG_TIMEOUT, true);
     } else if (err?.name === 'AbortError') {
-      setStatus('idle', '취소했습니다. 이미 보낸 요청은 되돌릴 수 없어 사용량에는 잡힐 수 있습니다.');
+      setStatus(panel, 'idle', '취소했습니다. 이미 보낸 요청은 되돌릴 수 없어 사용량에는 잡힐 수 있습니다.');
     } else {
-      failed(MSG_PROXY_DOWN, true);
+      failed(panel, MSG_PROXY_DOWN, true);
     }
+    return null;
   } finally {
     clearInterval(timer);
     clearTimeout(giveUp);
-    $('elapsed').textContent = '';
-    job = null;
+    $(panel.elapsed).textContent = '';
+    panel.job = null;
     updateButtons();
   }
 }
 
-function failed(message, retryable) {
-  setStatus('error', '');
-  showError(message, retryable);
+// ── 1단계: 분석 ─────────────────────────────────────────────────────────
+
+async function analyze() {
+  const panel = panels.vision;
+  if (!photo || panel.job) return;
+  const body = await postWithWait(panel, WAIT.vision, '/api/vision', { image: photo.dataUrl },
+    `분석 중입니다. 보통 ${WAIT.vision.expect}초쯤 걸립니다.`);
+  if (!body) return;
+
+  list = sanitizeList(body.data);
+  saveList();
+  render();
+  const n = list.items.length;
+  const review = list.items.filter(flagged).length;
+  if (n) {
+    setStatus(panel, 'done', `재료 ${n}개를 찾았습니다 (${body.elapsedS}초).`
+      + (review ? ` 노란색으로 표시된 ${review}개는 확인해 주세요.` : ''));
+  } else if (list.unsure.length) {
+    setStatus(panel, 'done', `확실한 식재료는 찾지 못했습니다 (${body.elapsedS}초). 아래 "무엇인가요?" 목록을 확인해 주세요.`);
+  } else {
+    setStatus(panel, 'done', `사진에서 식재료를 찾지 못했습니다 (${body.elapsedS}초). 다른 사진을 올리거나 직접 추가하세요.`);
+  }
+}
+
+// ── 2단계: 레시피 추천 ──────────────────────────────────────────────────
+
+/**
+ * 추천에 보낼 재료. 이름·수량만 보낸다(IngredientList 통째로 보내지 않는다 → PRD_step2 "API").
+ * needs_review 항목은 사람이 고치기 전까지 보내지 않는다(→ UNIT_json_contract).
+ * 이름은 프록시와 같은 방식(NFC·공백 정리)으로 맞춰야 uses 대조가 어긋나지 않는다.
+ */
+function recipeInputs() {
+  const seen = new Set();
+  const send = [];
+  const skipped = [];
+  for (const it of list.items) {
+    const name = it.name.normalize('NFC').replace(/\s+/g, ' ').trim();
+    if (!name) continue;
+    if (it.needs_review) { skipped.push(name); continue; }
+    if (seen.has(name)) continue;
+    seen.add(name);
+    send.push({ name, quantity: it.quantity });
+  }
+  return { send, skipped };
+}
+
+async function recommend() {
+  const panel = panels.recipe;
+  if (panel.job) return;
+  const { send } = recipeInputs();
+  if (!send.length) return;
+  const body = await postWithWait(panel, WAIT.recipe, '/api/recipe', { ingredients: send, count: RECIPE_COUNT },
+    `레시피를 고르는 중입니다. 보통 ${WAIT.recipe.expect}초쯤 걸립니다.`);
+  if (!body) return;
+
+  usedNames = send.map((i) => i.name);
+  recipes = arrangeRecipes(body.data?.recipes, usedNames);
+  renderRecipes();
+  const ready = recipes.filter((r) => !r.missing.length).length;
+  setStatus(panel, 'done', `레시피 ${recipes.length}개를 추천했습니다 (${body.elapsedS}초).`
+    + (ready ? ` ${ready}개는 지금 바로 만들 수 있습니다.` : ''));
+}
+
+const strList = (v) => (Array.isArray(v)
+  ? v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim())
+  : []);
+
+/**
+ * 표시 규칙 (→ PRD_step2 "정렬과 표시").
+ * 입력 재료에 없는 uses는 missing으로 옮기고(모델이 이름을 바꿔 쓴 경우),
+ * missing이 적은 순 → time_minutes가 짧은 순으로 정렬한다.
+ */
+function arrangeRecipes(raw, names) {
+  const have = new Set(names);
+  const out = (Array.isArray(raw) ? raw : [])
+    .filter((r) => r && typeof r === 'object' && typeof r.title === 'string')
+    .map((r) => {
+      const uses = [];
+      const missing = [];
+      for (const u of strList(r.uses)) (have.has(u) ? uses : missing).push(u);
+      missing.push(...strList(r.missing));
+      return { ...r, uses: [...new Set(uses)], missing: [...new Set(missing)], steps: strList(r.steps) };
+    });
+  const minutes = (r) => (Number.isFinite(r.time_minutes) ? r.time_minutes : Infinity);
+  return out.sort((a, b) => a.missing.length - b.missing.length || minutes(a) - minutes(b));
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;   // 모델 출력은 항상 textContent로만 넣는다
+  return node;
+}
+
+function chipRow(label, items, kind) {
+  const wrap = el('div', `chips ${kind}`);
+  const ul = el('ul');
+  if (items.length) items.forEach((name) => ul.append(el('li', 'chip', name)));
+  else ul.append(el('li', 'chip none', '없음'));
+  wrap.append(el('span', 'chips-label', label), ul);
+  return wrap;
+}
+
+function renderRecipes() {
+  const box = $('recipes');
+  box.replaceChildren();
+  for (const r of recipes) {
+    const card = el('article', 'recipe');
+    card.dataset.id = String(r.id ?? '');
+    const head = el('div', 'recipe-head');
+    head.append(el('h3', null, r.title));
+    if (!r.missing.length) head.append(el('span', 'badge-now', '지금 바로 가능'));
+    card.append(head);
+
+    const meta = [
+      Number.isFinite(r.time_minutes) ? `${r.time_minutes}분` : null,
+      r.difficulty || null,
+      Number.isFinite(r.servings) ? `${r.servings}인분` : null,
+    ].filter(Boolean).join(' · ');
+    if (meta) card.append(el('p', 'recipe-meta', meta));
+    if (r.summary) card.append(el('p', 'recipe-summary', r.summary));
+
+    card.append(chipRow('가진 재료', r.uses, 'have'));
+    card.append(chipRow('부족한 재료', r.missing, 'missing'));
+
+    const ol = el('ol', 'recipe-steps');          // 번호는 화면이 붙인다(<ol>)
+    r.steps.forEach((step) => ol.append(el('li', null, step)));
+    card.append(ol);
+    if (r.tips) card.append(el('p', 'recipe-tips', `팁: ${r.tips}`));
+    box.append(card);
+  }
+  $('recipe-used').hidden = !recipes.length;
+  $('recipe-used').textContent = `이 추천에 쓴 재료: ${usedNames.join(', ')}`;
+}
+
+function updateRecipeControls() {
+  const { send, skipped } = recipeInputs();
+  $('recommend').disabled = Boolean(panels.recipe.job) || !send.length;
+  let hint = send.length
+    ? `재료 ${send.length}개로 추천합니다. 재료를 고치고 다시 누르면 다른 요리가 나옵니다.`
+    : '재료를 하나 이상 넣으면 추천받을 수 있습니다.';
+  if (skipped.length) {
+    hint += ` 확인 필요 ${skipped.length}개(${skipped.join(', ')})는 고치기 전까지 빼고 보냅니다.`;
+  }
+  $('recipe-hint').textContent = hint;
 }
 
 // ── 상태 표시 ───────────────────────────────────────────────────────────
 
-function setStatus(state, text) {
-  const el = $('status');
-  el.dataset.state = state;
-  el.textContent = text;
-  el.hidden = !text;
+function setStatus(panel, state, text) {
+  const node = $(panel.status);
+  node.dataset.state = state;
+  node.textContent = text;
+  node.hidden = !text;
 }
 
-function showError(message, retryable) {
-  $('error-msg').textContent = message;
-  $('error').dataset.retryable = String(retryable);
-  $('error').hidden = false;
+function showError(panel, message, retryable) {
+  $(panel.errorMsg).textContent = message;
+  $(panel.error).dataset.retryable = String(retryable);
+  $(panel.error).hidden = false;
   updateButtons();
 }
 
-function hideError() {
-  $('error').hidden = true;
-  $('error').dataset.retryable = 'false';
+function hideError(panel) {
+  $(panel.error).hidden = true;
+  $(panel.error).dataset.retryable = 'false';
+}
+
+function failed(panel, message, retryable) {
+  setStatus(panel, 'error', '');
+  showError(panel, message, retryable);
 }
 
 function updateButtons() {
-  const busy = Boolean(job);
-  $('analyze').disabled = busy || !photo;
-  $('cancel').hidden = !busy;
-  $('file').disabled = busy;
-  $('drop').classList.toggle('disabled', busy);
+  const vision = Boolean(panels.vision.job);
+  $('analyze').disabled = vision || !photo;
+  $('cancel').hidden = !vision;
+  $('file').disabled = vision;
+  $('drop').classList.toggle('disabled', vision);
   // 재시도는 retryable일 때만. NO_KEY에 달면 사용자는 영원히 누른다.
-  $('retry').hidden = busy || !photo || $('error').dataset.retryable !== 'true';
+  $('retry').hidden = vision || !photo || $('error').dataset.retryable !== 'true';
+
+  const recipe = Boolean(panels.recipe.job);
+  $('recipe-cancel').hidden = !recipe;
+  $('recipe-retry').hidden = recipe || $('recipe-error').dataset.retryable !== 'true';
+  updateRecipeControls();
 }
 
 // ── 재료 목록 ───────────────────────────────────────────────────────────
@@ -309,6 +465,7 @@ function render() {
   $('empty').hidden = list.items.length > 0;
   renderUnsure();
   renderSummary();
+  updateRecipeControls();
 }
 
 function itemRow(item, index) {
@@ -364,6 +521,7 @@ function commitInPlace(li, item) {
   paintReview(li, item);
   saveList();
   renderSummary();
+  updateRecipeControls();
 }
 
 function paintReview(li, item) {
@@ -469,7 +627,11 @@ function wire() {
 
   $('analyze').addEventListener('click', analyze);
   $('retry').addEventListener('click', analyze);
-  $('cancel').addEventListener('click', () => job?.controller.abort());
+  $('cancel').addEventListener('click', () => panels.vision.job?.controller.abort());
+
+  $('recommend').addEventListener('click', recommend);
+  $('recipe-retry').addEventListener('click', recommend);
+  $('recipe-cancel').addEventListener('click', () => panels.recipe.job?.controller.abort());
 
   const form = $('add-form');
   fillCategories(form.elements.category, '기타');

@@ -70,6 +70,27 @@
         </div>
       </form>
     </section>
+
+    <!-- ③ 레시피 추천 — 재료를 고치고 다시 누르며 시험해 보는 곳 -->
+    <section class="card" aria-labelledby="recipe-title">
+      <h2 id="recipe-title">레시피 추천</h2>
+      <p id="recipe-hint" class="summary"></p>
+
+      <div class="actions">
+        <button id="recommend" type="button" class="primary" disabled>레시피 추천</button>
+        <button id="recipe-cancel" type="button" hidden>취소</button>
+      </div>
+
+      <div id="recipe-status" class="status" aria-live="polite" data-state="idle" hidden></div>
+      <div id="recipe-elapsed" class="elapsed" aria-hidden="true"></div>
+      <div id="recipe-error" class="error" role="alert" hidden>
+        <span id="recipe-error-msg"></span>
+        <button id="recipe-retry" type="button" hidden>다시 시도</button>
+      </div>
+
+      <p id="recipe-used" class="summary recipe-used" hidden></p>
+      <div id="recipes" class="recipes"></div>
+    </section>
   </main>
 
   <template id="item-tpl">

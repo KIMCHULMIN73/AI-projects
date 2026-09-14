@@ -153,6 +153,29 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
   .row > * { flex: 1 1 100%; }
 }
 
+/* 레시피 */
+.recipe-used { margin-top: 12px; }
+.recipes { display: grid; gap: 12px; margin-top: 12px; }
+.recipes:empty { display: none; }
+.recipe { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.recipe-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.recipe h3 { margin: 0; font-size: 1.05rem; color: var(--text); }
+.badge-now {
+  font-size: .8rem; font-weight: 700; padding: 2px 10px; border-radius: 999px;
+  background: var(--accent); color: var(--accent-text); white-space: nowrap;
+}
+.recipe-meta, .recipe-tips { margin: 4px 0 0; font-size: .85rem; color: var(--muted); }
+.recipe-summary { margin: 6px 0 0; }
+.chips { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin-top: 8px; }
+.chips ul { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 0; padding: 0; }
+.chips-label { font-size: .8rem; color: var(--muted); min-width: 5.5em; }
+.chip { font-size: .85rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.chips.have .chip { border-color: var(--accent); }
+.chips.missing .chip { border-color: var(--review-line); background: var(--review-bg); }
+.chip.none { color: var(--muted); border-style: dashed; }
+.recipe-steps { margin: 10px 0 0; padding-left: 1.4em; }
+.recipe-steps li + li { margin-top: 2px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
