@@ -10,3 +10,20 @@ secrets/
 
 # 쓸 모델 메모 (사용자 결정으로 git 제외)
 Models
+
+# 그림 파일 (사용자 결정으로 git 제외)
+# 냉장고 사진은 집 안이 찍히고 원격은 공개 저장소다. 테스트 사진이 `git add .`에 딸려 가지 않게 한다.
+# 리눅스의 git은 대소문자를 가리므로 휴대폰·카메라의 `.JPG` 같은 대문자 확장자도 함께 막는다.
+*.[jJ][pP][gG]
+*.[jJ][pP][eE][gG]
+*.[pP][nN][gG]
+*.[bB][mM][pP]
+*.[gG][iI][fF]
+*.[wW][eE][bB][pP]
+*.[tT][iI][fF]
+*.[tT][iI][fF][fF]
+*.[hH][eE][iI][cC]
+*.[hH][eE][iI][fF]
+*.[aA][vV][iI][fF]
+*.[iI][cC][oO]
+*.[sS][vV][gG]

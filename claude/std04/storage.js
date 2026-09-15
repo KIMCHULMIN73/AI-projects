@@ -10,6 +10,9 @@ const PREFIX = 'fridge.v1.';
 
 export const KEYS = Object.freeze({
   lastIngredients: `${PREFIX}lastIngredients`,   // 1단계: 마지막 분석 결과(IngredientList)
+  profiles: `${PREFIX}profiles`,                 // 3단계: 프로필 배열
+  activeProfile: `${PREFIX}activeProfile`,       // 3단계: 지금 선택된 프로필 id
+  saved: (profileId) => `${PREFIX}saved.${profileId}`,   // 3단계: 그 프로필의 보관함
 });
 
 /** 읽기. 없음·차단·깨진 JSON 모두 fallback으로 돌려준다. */
@@ -29,6 +32,16 @@ export function writeJSON(key, value) {
     return { ok: true, quota: false };
   } catch (err) {
     return { ok: false, quota: isQuotaError(err) };
+  }
+}
+
+/** 지우기. 던지지 않고 성공 여부를 돌려준다. */
+export function removeKey(key) {
+  try {
+    localStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
   }
 }
 

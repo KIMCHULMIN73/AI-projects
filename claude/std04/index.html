@@ -6,14 +6,46 @@
   <title>냉장고 재료 정리</title>
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
+  <script type="module" src="library.js"></script>
 </head>
 <body>
   <header class="top">
     <h1>냉장고 재료 정리</h1>
     <p id="health" class="health" data-state="checking" aria-live="polite">서버 확인 중…</p>
+    <!-- 3단계: 누구인지 항상 보인다 -->
+    <div class="profile-bar">
+      <button id="profile-toggle" type="button" aria-expanded="false" aria-controls="profile-menu"><span id="profile-current">프로필</span> ▾</button>
+      <button id="library-link" type="button" class="library-link">보관함 <span id="library-count">0</span></button>
+    </div>
   </header>
 
+  <!-- 3단계: 프로필 전환 · 새 프로필 · 이름 수정 · 삭제 -->
+  <section id="profile-menu" class="card profile-menu" aria-labelledby="profile-menu-title" hidden>
+    <h2 id="profile-menu-title">프로필</h2>
+    <ul id="profile-list" class="profile-list"></ul>
+    <form id="rename-form">
+      <label for="rename-input">지금 프로필 이름</label>
+      <div class="row">
+        <input id="rename-input" name="name" type="text" maxlength="20" required>
+        <button type="submit">이름 저장</button>
+      </div>
+    </form>
+    <form id="new-profile-form">
+      <label for="new-profile-input">새 프로필</label>
+      <div class="row">
+        <input id="new-profile-input" name="name" type="text" maxlength="20" placeholder="이름 (예: 엄마)" required>
+        <button type="submit">만들기</button>
+      </div>
+    </form>
+    <div class="profile-danger">
+      <button id="profile-delete" type="button">이 프로필 지우기</button>
+      <span id="profile-delete-note" class="summary"></span>
+    </div>
+  </section>
+
   <main>
+    <div id="store-error" class="error store-error" role="alert" hidden></div>
+
     <!-- ① 사진 올리기 → 미리보기 + 분석 -->
     <section class="card" aria-labelledby="photo-title">
       <h2 id="photo-title">냉장고 사진</h2>
@@ -90,6 +122,16 @@
 
       <p id="recipe-used" class="summary recipe-used" hidden></p>
       <div id="recipes" class="recipes"></div>
+    </section>
+
+    <!-- ④ 보관함 (3단계) — 지금 프로필이 저장한 레시피 -->
+    <section id="library" class="card" aria-labelledby="library-title" tabindex="-1">
+      <div class="list-head">
+        <h2 id="library-title">보관함</h2>
+        <p id="library-owner" class="summary"></p>
+      </div>
+      <p id="library-empty" class="empty">아직 저장한 레시피가 없습니다. 레시피 카드의 [저장]을 누르세요.</p>
+      <ul id="library-list" class="library-list"></ul>
     </section>
   </main>
 

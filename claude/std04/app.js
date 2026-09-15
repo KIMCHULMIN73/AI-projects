@@ -385,6 +385,8 @@ function renderRecipes() {
   }
   $('recipe-used').hidden = !recipes.length;
   $('recipe-used').textContent = `이 추천에 쓴 재료: ${usedNames.join(', ')}`;
+  // 3단계(library.js)가 카드에 저장 버튼을 붙일 수 있게 알린다. 듣는 쪽이 없어도 아무 일 없다.
+  document.dispatchEvent(new CustomEvent('fridge:recipes', { detail: { recipes } }));
 }
 
 function updateRecipeControls() {

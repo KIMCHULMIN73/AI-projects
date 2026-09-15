@@ -16,6 +16,7 @@
 ## 실행
 
 ```bash
+./run.sh                     # 평소에는 이것 — 8010번 고정, 이 앱이 이미 떠 있으면 브라우저만 연다
 python3 server.py            # 빈 포트를 찾아 띄우고 브라우저를 연다
 python3 server.py 8080       # 포트 고정
 NO_OPEN=1 python3 server.py  # 브라우저 자동 실행 없이
@@ -29,7 +30,7 @@ NO_OPEN=1 python3 server.py  # 브라우저 자동 실행 없이
 
 | 경로 | 메서드 | 용도 | 단계 |
 |---|---|---|---|
-| `/` 및 정적 파일 | GET | `index.html`, `app.js`, `style.css` | 1·2·3 |
+| `/` 및 정적 파일 | GET | `index.html`, `app.js`, `storage.js`, `library.js`, `style.css` — **이름 화이트리스트로만** 연다. 폴더를 통째로 서빙하면 `Models`·`config.py`가 나간다 | 1·2·3 |
 | `/api/health` | GET | 키를 읽을 수 있는지, 모델이 무엇인지 | 1 |
 | `/api/vision` | POST | 이미지 → 식재료 | 1 |
 | `/api/recipe` | POST | 식재료 → 레시피 | 2 |
