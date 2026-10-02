@@ -63,8 +63,15 @@ const active = () => profiles.find((p) => p.id === activeId);
 
 // ── 쓰기 — 3단계는 실패를 반드시 알린다 (→ UNIT_storage, PRD_step3 "저장이 실패할 때") ──
 
-/** 'ok' | 'quota' | 'blocked' */
-function persist(key, value) {
+/**
+ * 'ok' | 'quota' | 'blocked'
+ *
+ * `send`가 false면 용량 초과라도 보관함으로 보내지 않는다. 사용자가 저장을 누른 것이 아니라
+ * 페이지가 열리면서 자동으로 일어난 쓰기(init의 기본 프로필 만들기)이기 때문이다 —
+ * 아무것도 하지 않았는데 화면이 아래로 움직이면 사용자는 무슨 일이 난 줄 안다.
+ * 안내는 어느 쪽이든 띄운다(→ PRD_step3 "저장이 실패할 때": 어느 경우든 반드시 알린다).
+ */
+function persist(key, value, { send = true } = {}) {
   const r = writeJSON(key, value);
   if (r.ok) {
     notice(null);
@@ -72,7 +79,7 @@ function persist(key, value) {
   }
   if (r.quota) {
     notice(MSG_QUOTA);
-    openLibrary();          // 자동으로 오래된 것을 지우지 않는다. 사용자가 고르게 보낸다.
+    if (send) openLibrary();    // 자동으로 오래된 것을 지우지 않는다. 사용자가 고르게 보낸다.
     return 'quota';
   }
   notice(MSG_BLOCKED);
@@ -109,9 +116,9 @@ function setProfiles(next) {
   return true;
 }
 
-function setActive(id) {
+function setActive(id, opts) {
   activeId = id;
-  persist(KEYS.activeProfile, id);
+  persist(KEYS.activeProfile, id, opts);
   saved = readSaved(id);
 }
 
@@ -342,7 +349,7 @@ function init() {
   if (!profiles.length) {
     // 첫 실행(또는 깨진 값에서 복구). 강제로 만들게 하지 않고 "기본"을 바로 쓰게 한다.
     profiles = [newProfile('기본')];
-    persist(KEYS.profiles, profiles);
+    persist(KEYS.profiles, profiles, { send: false });
   }
   const stored = readJSON(KEYS.activeProfile, null);
   const id = profiles.some((p) => p.id === stored) ? stored : profiles[0].id;
@@ -350,7 +357,7 @@ function init() {
     activeId = id;
     saved = readSaved(id);
   } else {
-    setActive(id);
+    setActive(id, { send: false });   // 페이지를 여는 중이다 — 안내만 하고 화면은 움직이지 않는다
   }
   renderAll();
 }

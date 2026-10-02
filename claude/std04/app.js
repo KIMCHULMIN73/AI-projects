@@ -26,7 +26,9 @@ const RECIPE_COUNT = 3;
 // 프록시가 문구를 만들 수 없는 경우(프록시에 닿지 못함)만 화면이 직접 말한다.
 const MSG_PROXY_DOWN = '프록시(server.py)에 연결할 수 없습니다. 서버가 켜져 있는지 확인하세요.';
 const MSG_TIMEOUT = '시간이 너무 오래 걸립니다.';
-const MSG_IDLE = '냉장고 사진을 올려 주세요. 분석은 보통 20초쯤 걸립니다.';
+// 예상 초의 원본은 위의 WAIT 하나뿐이다. index.html의 같은 문구는 스크립트가 막힌 경우의
+// 기본값이고, 이 파일이 뜨면 startup()에서 덮어쓴다.
+const MSG_IDLE = `냉장고 사진을 올려 주세요. 분석은 보통 ${WAIT.vision.expect}초쯤 걸립니다.`;
 const MSG_SLOW = '평소보다 오래 걸리고 있습니다. 조금만 더 기다려 주세요.';
 
 const $ = (id) => document.getElementById(id);
@@ -39,8 +41,14 @@ let photoSeq = 0;        // 축소 요청 번호. 늦게 끝난 축소가 새 �
 
 // 화면의 비동기 작업 두 개. 각자 상태 표시 요소와 진행 중인 작업을 가진다.
 const panels = {
-  vision: { status: 'status', elapsed: 'elapsed', error: 'error', errorMsg: 'error-msg', job: null },
-  recipe: { status: 'recipe-status', elapsed: 'recipe-elapsed', error: 'recipe-error', errorMsg: 'recipe-error-msg', job: null },
+  vision: {
+    status: 'status', wait: 'wait', bar: 'wait-bar', elapsed: 'elapsed', of: 'elapsed-of',
+    error: 'error', errorMsg: 'error-msg', job: null,
+  },
+  recipe: {
+    status: 'recipe-status', wait: 'recipe-wait', bar: 'recipe-wait-bar', elapsed: 'recipe-elapsed',
+    of: 'recipe-elapsed-of', error: 'recipe-error', errorMsg: 'recipe-error-msg', job: null,
+  },
 };
 
 // ── IngredientList ──────────────────────────────────────────────────────
@@ -92,6 +100,30 @@ function flagged(item) {
   return item.source === 'vision' && (item.needs_review || item.confidence === 'low');
 }
 
+const badgeLabel = (item) => (item.needs_review ? '확인 필요' : '확신 낮음');
+
+/**
+ * 표시가 붙은 항목을 **뜻이 다른 두 가지로 나눠** 센다.
+ * 둘을 "확인 필요" 한 이름으로 합쳐 세면, 같은 말이 화면마다 다른 수를 가리킨다 —
+ * 요약줄은 둘을 합쳐 세고 레시피 힌트는 needs_review만 세기 때문이다(그쪽이 계약상 맞다).
+ */
+function reviewCounts() {
+  let need = 0;
+  let low = 0;
+  for (const it of list.items) {
+    if (it.source !== 'vision') continue;
+    if (it.needs_review) need += 1;
+    else if (it.confidence === 'low') low += 1;
+  }
+  return { need, low, total: need + low };
+}
+
+/** "확인 필요 1개 · 확신 낮음 2개" — 없는 쪽은 적지 않는다. 둘 다 없으면 빈 문자열. */
+function reviewPhrase() {
+  const { need, low } = reviewCounts();
+  return [need && `확인 필요 ${need}개`, low && `확신 낮음 ${low}개`].filter(Boolean).join(' · ');
+}
+
 // ── 서버 상태 ────────────────────────────────────────────────────────────
 
 async function checkHealth() {
@@ -120,7 +152,8 @@ async function acceptFile(file, note = '') {
   hideError(panel);
   // 확장자 없는 파일은 type이 비어 온다. 비었으면 실제로 열어 보고 판단한다.
   if (file.type && !file.type.startsWith('image/')) {
-    showError(panel, '이미지 파일만 올릴 수 있습니다.', false);
+    // 무엇이 잘못됐는지가 아니라 **무엇을 올리면 되는지**를 말한다.
+    showError(panel, '이미지 파일만 올릴 수 있습니다 (JPG·PNG·WebP). PDF·문서 파일은 읽지 못합니다.', false);
     return;
   }
   // 축소하는 동안 photo를 비워 [재료 분석]을 잠근다. 비워 두지 않으면 축소가 끝나기 전에
@@ -209,12 +242,18 @@ async function postWithWait(panel, wait, url, payload, loadingText) {
   const started = Date.now();
   const giveUp = setTimeout(() => { panel.job.reason = 'timeout'; controller.abort(); }, wait.giveUp * 1000);
 
-  // 낭독기에는 상태가 바뀔 때만 읽히게 하고, 매초 바뀌는 숫자는 따로 둔다.
+  // 낭독기에는 상태가 바뀔 때만 읽히게 하고, 매초 바뀌는 숫자(막대 포함)는 aria-hidden 영역에 둔다.
   let slow = false;
   setStatus(panel, 'loading', loadingText);
+  $(panel.wait).hidden = false;
+  $(panel.of).textContent = ` / 보통 ${wait.expect}초`;
   const tick = () => {
     const s = Math.floor((Date.now() - started) / 1000);
     $(panel.elapsed).textContent = `${s}초째`;
+    // 막대는 "예상 시간 대비 지금까지"만 보여준다. 꽉 차면 색을 바꿔 예상을 넘겼음을 알린다 —
+    // 끝나간다고 속이지 않으려는 것이다.
+    $(panel.bar).style.width = `${Math.min(100, (s / wait.expect) * 100)}%`;
+    $(panel.wait).classList.toggle('over', s >= wait.expect);
     if (!slow && s >= wait.slowAfter) {
       slow = true;
       setStatus(panel, 'loading', MSG_SLOW);
@@ -256,6 +295,10 @@ async function postWithWait(panel, wait, url, payload, loadingText) {
     clearInterval(timer);
     clearTimeout(giveUp);
     $(panel.elapsed).textContent = '';
+    $(panel.of).textContent = '';
+    $(panel.bar).style.width = '0%';
+    $(panel.wait).classList.remove('over');
+    $(panel.wait).hidden = true;
     panel.job = null;
     updateButtons();
   }
@@ -274,10 +317,11 @@ async function analyze() {
   saveList();
   render();
   const n = list.items.length;
-  const review = list.items.filter(flagged).length;
+  // 색만으로 어느 항목인지 가리키지 않는다("노란색으로 표시된 N개"는 색을 못 보면 뜻이 없다).
+  const review = reviewPhrase();
   if (n) {
     setStatus(panel, 'done', `재료 ${n}개를 찾았습니다 (${body.elapsedS}초).`
-      + (review ? ` 노란색으로 표시된 ${review}개는 확인해 주세요.` : ''));
+      + (review ? ` 아래 목록에서 ${review}를 확인해 주세요.` : ''));
   } else if (list.unsure.length) {
     setStatus(panel, 'done', `확실한 식재료는 찾지 못했습니다 (${body.elapsedS}초). 아래 "무엇인가요?" 목록을 확인해 주세요.`);
   } else {
@@ -319,6 +363,12 @@ async function recommend() {
   usedNames = send.map((i) => i.name);
   recipes = arrangeRecipes(body.data?.recipes, usedNames);
   renderRecipes();
+  if (!recipes.length) {
+    // 0개로 정리되면 성공이 아니다. "레시피 0개를 추천했습니다"는 빈 자리 위에 뜨는 성공 문구라
+    // 사용자는 무엇이 잘못됐는지도, 무엇을 하면 되는지도 알 수 없다.
+    failed(panel, '레시피를 받았지만 화면에 올릴 수 있는 것이 하나도 없었습니다. 다시 시도해 주세요.', true);
+    return;
+  }
   const ready = recipes.filter((r) => !r.missing.length).length;
   setStatus(panel, 'done', `레시피 ${recipes.length}개를 추천했습니다 (${body.elapsedS}초).`
     + (ready ? ` ${ready}개는 지금 바로 만들 수 있습니다.` : ''));
@@ -419,9 +469,10 @@ function setStatus(panel, state, text) {
   node.hidden = !text;
 }
 
-function showError(panel, message, retryable) {
+function showError(panel, message, retryable, { escape = false } = {}) {
   $(panel.errorMsg).textContent = message;
   $(panel.error).dataset.retryable = String(retryable);
+  $(panel.error).dataset.escape = String(escape);
   $(panel.error).hidden = false;
   updateButtons();
 }
@@ -429,11 +480,14 @@ function showError(panel, message, retryable) {
 function hideError(panel) {
   $(panel.error).hidden = true;
   $(panel.error).dataset.retryable = 'false';
+  $(panel.error).dataset.escape = 'false';
 }
 
 function failed(panel, message, retryable) {
   setStatus(panel, 'error', '');
-  showError(panel, message, retryable);
+  // 사진 쪽이 막혀도 재료를 손으로 넣으면 2단계까지 갈 수 있다. 다시 시도가 불가능한
+  // NO_KEY·NO_MODEL에서 화면이 막다른 길이 되지 않도록 빠져나갈 길을 함께 둔다.
+  showError(panel, message, retryable, { escape: panel === panels.vision });
 }
 
 function updateButtons() {
@@ -444,6 +498,8 @@ function updateButtons() {
   $('drop').classList.toggle('disabled', vision);
   // 재시도는 retryable일 때만. NO_KEY에 달면 사용자는 영원히 누른다.
   $('retry').hidden = vision || !photo || $('error').dataset.retryable !== 'true';
+  // 그 대신 모든 분석 실패에는 "직접 입력"이라는 다음 행동이 하나 남는다.
+  $('manual').hidden = vision || $('error').hidden || $('error').dataset.escape !== 'true';
 
   const recipe = Boolean(panels.recipe.job);
   $('recipe-cancel').hidden = !recipe;
@@ -540,8 +596,10 @@ function paintReview(li, item) {
   const badge = li.querySelector('.badge');
   li.classList.toggle('review', on);
   badge.hidden = !on;
-  badge.textContent = item.needs_review ? '확인 필요' : '확신 낮음';
+  badge.textContent = badgeLabel(item);
   badge.title = '이대로 맞으면 눌러서 확인 표시를 푸세요';
+  // 낭독기에는 배지가 무엇을 하는 단추인지까지 읽혀야 한다 — title은 읽히지 않을 수 있다.
+  badge.setAttribute('aria-label', `${item.name}: ${badgeLabel(item)} — 이대로 맞으면 눌러서 표시를 푸세요`);
 }
 
 function renderUnsure() {
@@ -588,9 +646,10 @@ function renderUnsure() {
 }
 
 function renderSummary() {
+  renderReviewHelp();
   const n = list.items.length;
   if (!n) { $('summary').textContent = ''; return; }
-  const review = list.items.filter(flagged).length;
+  const review = reviewPhrase();
   let when = '직접 입력';
   if (list.analyzed_at) {
     const d = new Date(list.analyzed_at);
@@ -598,7 +657,19 @@ function renderSummary() {
       when = `${d.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' })} 분석`;
     }
   }
-  $('summary').textContent = `재료 ${n}개${review ? ` · 확인 필요 ${review}개` : ''} · ${when}`;
+  $('summary').textContent = `재료 ${n}개${review ? ` · ${review}` : ''} · ${when}`;
+}
+
+/** 표시를 어떻게 푸는지 화면에 적는다. 전에는 배지의 title 툴팁에만 있어 터치·키보드에서는 보이지 않았다. */
+function renderReviewHelp() {
+  const { need, low } = reviewCounts();
+  const box = $('review-help');
+  box.hidden = !(need || low);
+  if (box.hidden) { box.textContent = ''; return; }
+  const what = need && low ? '[확인 필요]·[확신 낮음]' : (need ? '[확인 필요]' : '[확신 낮음]');
+  box.textContent = `${what} 표시가 붙은 항목은 모델이 자신 없어 한 것입니다.`
+    + ' 이름이나 수량을 고치면 표시가 풀리고, 그대로 맞으면 표시를 눌러 푸세요.'
+    + (need ? ' [확인 필요]는 풀기 전까지 레시피 추천에 보내지 않습니다.' : '');
 }
 
 // ── 이벤트 연결 ─────────────────────────────────────────────────────────
@@ -638,6 +709,11 @@ function wire() {
 
   $('analyze').addEventListener('click', analyze);
   $('retry').addEventListener('click', analyze);
+  $('manual').addEventListener('click', () => {
+    const name = $('add-form').elements.name;
+    name.scrollIntoView({ block: 'center' });
+    name.focus({ preventScroll: true });
+  });
   $('cancel').addEventListener('click', () => panels.vision.job?.controller.abort());
 
   $('recommend').addEventListener('click', recommend);
@@ -660,6 +736,9 @@ function wire() {
 }
 
 wire();
+// index.html의 기본 문구를 WAIT에서 만든 문구로 덮어쓴다. 예상 초가 적힌 곳이 두 곳이면
+// 한쪽만 고치고 끝나기 때문이다(HTML 쪽은 스크립트가 막혔을 때만 보이는 대비책).
+setStatus(panels.vision, 'idle', MSG_IDLE);
 render();
 updateButtons();
 checkHealth();

@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>냉장고 재료 정리</title>
+  <!-- 탭 아이콘. 파일로 두면 server.py의 정적 파일 화이트리스트를 고쳐야 하므로 data URI로 박는다.
+       CSP의 img-src가 'self' data: 를 허용하므로 그대로 뜬다. 이것이 없으면 /favicon.ico가 매번 404다. -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='rgb(31,122,77)'/%3E%3Crect x='9' y='6' width='14' height='20' rx='2.5' fill='rgb(255,255,255)'/%3E%3Crect x='9' y='14' width='14' height='1.6' fill='rgb(31,122,77)'/%3E%3Crect x='19' y='9' width='1.8' height='4' rx='.9' fill='rgb(31,122,77)'/%3E%3Crect x='19' y='17' width='1.8' height='4' rx='.9' fill='rgb(31,122,77)'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
   <script type="module" src="library.js"></script>
@@ -66,12 +69,19 @@
         <button id="cancel" type="button" hidden>취소</button>
       </div>
 
+      <!-- 스크립트가 막힌 경우에 대비한 기본 문구. 초 수의 원본은 app.js의 WAIT.vision.expect이고,
+           app.js가 뜨면 곧바로 그 값으로 덮어쓴다(→ UNIT_image_input "1024px로 올리면 30초로"). -->
       <div id="status" class="status" aria-live="polite" data-state="idle">냉장고 사진을 올려 주세요. 분석은 보통 20초쯤 걸립니다.</div>
       <!-- 매초 바뀌므로 낭독기가 읽지 않게 live 영역 밖에 둔다 -->
-      <div id="elapsed" class="elapsed" aria-hidden="true"></div>
+      <div id="wait" class="wait" aria-hidden="true" hidden>
+        <div class="wait-track"><div id="wait-bar" class="wait-bar"></div></div>
+        <span id="elapsed" class="elapsed"></span>
+        <span id="elapsed-of" class="elapsed-of"></span>
+      </div>
       <div id="error" class="error" role="alert" hidden>
         <span id="error-msg"></span>
         <button id="retry" type="button" hidden>다시 시도</button>
+        <button id="manual" type="button" hidden>재료 직접 입력</button>
       </div>
 
       <p class="privacy">사진은 분석을 위해 OpenRouter로 전송되며, 이 앱은 사진을 저장하지 않습니다.</p>
@@ -85,6 +95,9 @@
       </div>
 
       <p id="empty" class="empty">아직 재료가 없습니다. 사진을 분석하거나 아래에서 직접 추가하세요.</p>
+      <!-- 표시가 붙은 항목을 어떻게 푸는지 화면에 적어 둔다. 전에는 배지의 title 툴팁에만 있어
+           키보드·터치 사용자는 방법을 알 길이 없었다. 표시가 하나도 없으면 숨긴다. -->
+      <p id="review-help" class="review-help" hidden></p>
       <div id="groups"></div>
 
       <div id="unsure-box" class="unsure" hidden>
@@ -114,7 +127,11 @@
       </div>
 
       <div id="recipe-status" class="status" aria-live="polite" data-state="idle" hidden></div>
-      <div id="recipe-elapsed" class="elapsed" aria-hidden="true"></div>
+      <div id="recipe-wait" class="wait" aria-hidden="true" hidden>
+        <div class="wait-track"><div id="recipe-wait-bar" class="wait-bar"></div></div>
+        <span id="recipe-elapsed" class="elapsed"></span>
+        <span id="recipe-elapsed-of" class="elapsed-of"></span>
+      </div>
       <div id="recipe-error" class="error" role="alert" hidden>
         <span id="recipe-error-msg"></span>
         <button id="recipe-retry" type="button" hidden>다시 시도</button>

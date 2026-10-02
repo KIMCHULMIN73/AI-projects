@@ -99,8 +99,17 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
   vertical-align: -.1em; border: 2px solid var(--line); border-top-color: var(--accent);
   border-radius: 50%; animation: spin .9s linear infinite;
 }
-.elapsed { display: block; font-variant-numeric: tabular-nums; font-weight: 600; }
-.elapsed:empty { display: none; }
+/* 기다리는 동안: 막대 + 경과 초 + 예상 시간. aria-hidden 영역이라 낭독기는 매초 읽지 않는다. */
+.wait { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.wait-track {
+  flex: 0 0 120px; height: 8px; border-radius: 999px;
+  background: var(--line); overflow: hidden;
+}
+.wait-bar { width: 0; height: 100%; background: var(--accent); transition: width .9s linear; }
+/* 예상 시간을 넘기면 색을 바꾼다 — 꽉 찬 막대가 "곧 끝난다"는 뜻으로 읽히지 않게. */
+.wait.over .wait-bar { background: var(--review-line); }
+.elapsed { font-variant-numeric: tabular-nums; font-weight: 600; }
+.elapsed-of { font-size: .85rem; color: var(--muted); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .error {
@@ -116,6 +125,11 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 #list-title:focus { outline: none; }
 .summary { margin: 0; font-size: .85rem; color: var(--muted); }
 .empty { color: var(--muted); }
+/* 표시를 푸는 방법. 표시된 항목과 같은 색을 써서 무엇을 가리키는지 보이게 한다. */
+.review-help {
+  margin: 12px 0 0; padding: 8px 12px; font-size: .85rem;
+  background: var(--review-bg); border-left: 4px solid var(--review-line); border-radius: 6px;
+}
 
 .group ul, .unsure ul { list-style: none; margin: 0; padding: 0; }
 
@@ -151,6 +165,11 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
   .item .i-name { grid-column: 1 / -1; }
   .item .badge, .item .i-del { justify-self: stretch; }
   .row > * { flex: 1 1 100%; }
+  /* 손가락으로 누르는 것은 44px 이상. 기본값 40px은 좁은 화면에서 작다.
+     .save-btn은 아래 3단계 규칙이 이 블록보다 뒤에 와서 여기서 덮이지 않는다 — 파일 끝에서 덮는다. */
+  button, input, select { min-height: 44px; }
+  .badge { min-height: 44px; }
+  .saved summary { min-height: 44px; align-content: center; }
 }
 
 /* 레시피 */
@@ -204,6 +223,11 @@ button.primary { background: var(--accent); color: var(--accent-text); border-co
 .saved-title { font-weight: 600; }
 .saved-meta { font-size: .8rem; color: var(--muted); }
 .saved-body { margin-top: 4px; }
+
+/* 위 480px 블록보다 뒤에 와야 .recipe-head .save-btn의 min-height: 32px를 덮는다. */
+@media (max-width: 480px) {
+  .recipe-head .save-btn { min-height: 44px; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

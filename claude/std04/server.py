@@ -177,8 +177,10 @@ def call_model(model: str, messages: list, *, max_tokens: int, temperature: floa
             if status == 429:
                 raise ApiError("RATE_LIMIT", log="HTTP 429") from None
             if status in (401, 403):
+                # 뒷문장으로 tools/ 를 안내하지 않는다 — tools/ 는 개발 전용이라 지운 환경에서는
+                # 없는 파일을 가리킨다(→ CLAUDE.md "개발 전용 스크립트는 앱과 분리한다").
                 raise ApiError("NO_KEY", "키가 거부되었습니다(폐기되었거나 잘못된 키). "
-                               "python3 tools/check_secrets.py --online 으로 확인하세요.",
+                               "openrouter.ai/keys 에서 키를 다시 발급해 주세요.",
                                log=f"HTTP {status}") from None
             if status < 500:
                 raise ApiError("UPSTREAM", f"모델 서버가 요청을 거부했습니다 (HTTP {status}).",
