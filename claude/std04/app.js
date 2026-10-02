@@ -35,6 +35,7 @@ let list = loadList();   // IngredientList — 2단계가 받는 계약
 let photo = null;        // { dataUrl, width, height, origWidth, origHeight } — 메모리에만 둔다
 let recipes = [];        // 마지막 추천 결과(Recipe[]) — 메모리에만. 저장은 3단계 일이다.
 let usedNames = [];      // 그 추천에 보낸 재료 이름
+let photoSeq = 0;        // 축소 요청 번호. 늦게 끝난 축소가 새 사진을 덮지 않게 한다.
 
 // 화면의 비동기 작업 두 개. 각자 상태 표시 요소와 진행 중인 작업을 가진다.
 const panels = {
@@ -122,25 +123,33 @@ async function acceptFile(file, note = '') {
     showError(panel, '이미지 파일만 올릴 수 있습니다.', false);
     return;
   }
+  // 축소하는 동안 photo를 비워 [재료 분석]을 잠근다. 비워 두지 않으면 축소가 끝나기 전에
+  // 누를 수 있고, 그러면 미리보기는 새 사진인데 분석에는 이전 사진이 간다.
+  const seq = ++photoSeq;
+  photo = null;
+  updateButtons();
   setStatus(panel, 'idle', '사진을 줄이는 중…');
+  let shrunk = null;
   try {
-    photo = await shrink(file);
+    shrunk = await shrink(file);
   } catch {
-    photo = null;
+    if (seq !== photoSeq) return;        // 더 새 사진이 들어왔다 — 이 결과는 버린다
     renderPreview();
     updateButtons();
     setStatus(panel, 'idle', MSG_IDLE);
     showError(panel, '이미지를 읽지 못했습니다. JPEG·PNG 같은 사진 파일을 올려 주세요.', false);
     return;
   }
-  if (photo.dataUrl.length > MAX_DATA_URL) {
-    photo = null;
+  // 축소 두 개가 겹치면 늦게 끝난 쪽은 아무것도 하지 않는다. 분석이 시작됐으면 그 화면도 건드리지 않는다.
+  if (seq !== photoSeq || panel.job) return;
+  if (shrunk.dataUrl.length > MAX_DATA_URL) {
     renderPreview();
     updateButtons();
     setStatus(panel, 'idle', MSG_IDLE);
     showError(panel, '줄인 뒤에도 사진이 4MB를 넘습니다. 다른 사진을 올려 주세요.', false);
     return;
   }
+  photo = shrunk;
   renderPreview();
   updateButtons();
   const replace = list.items.length ? ' 분석하면 지금 재료 목록이 새 결과로 바뀝니다.' : '';

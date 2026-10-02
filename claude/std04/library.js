@@ -11,6 +11,13 @@ const NAME_MAX = 20;
 const MSG_QUOTA = '저장 공간이 찼습니다. 오래된 레시피를 지워 주세요.';
 const MSG_BLOCKED = '이 브라우저가 저장을 막고 있습니다. 프로필과 보관함은 새로고침하면 사라집니다.';
 
+// 2단계 화면에 저장 버튼을 붙일 자리. **app.js의 renderRecipes()와 짝이다**
+// (app.js renderRecipes(): `#recipes` 컨테이너 · `.recipe` + data-id 카드 · `.recipe-head` 머리).
+// 저쪽 클래스명이 바뀌면 여기도 바꿔야 한다 — 안 바꾸면 예외 없이 저장 버튼만 조용히 사라진다.
+// 단계 경계는 그대로다: 데이터는 'fridge:recipes' 이벤트로만 받고, 여기서는 DOM에 버튼만 얹는다.
+const SEL_CARD = '#recipes .recipe[data-id]';
+const SEL_CARD_HEAD = '.recipe-head';
+
 const $ = (id) => document.getElementById(id);
 
 let profiles = [];       // [{ id, name, emoji, createdAt }]
@@ -270,7 +277,7 @@ function renderLibrary() {
 
 /** 2단계 레시피 카드에 저장 버튼을 붙이고, 지금 프로필 기준으로 "저장됨" 여부를 칠한다. */
 function decorateCards() {
-  for (const card of document.querySelectorAll('#recipes .recipe[data-id]')) {
+  for (const card of document.querySelectorAll(SEL_CARD)) {
     const id = card.dataset.id;
     const recipe = shown.get(id);
     if (!recipe) continue;
@@ -279,7 +286,7 @@ function decorateCards() {
       btn = el('button', 'save-btn');
       btn.type = 'button';
       btn.addEventListener('click', () => saveRecipe(id));
-      (card.querySelector('.recipe-head') ?? card).append(btn);
+      (card.querySelector(SEL_CARD_HEAD) ?? card).append(btn);
     }
     const done = isSaved(id);
     btn.textContent = done ? '저장됨' : '저장';

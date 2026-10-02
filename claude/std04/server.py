@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import math
 import os
 import re
 import secrets
@@ -287,6 +288,22 @@ def ask_for_json(model: str, messages: list, *, shape_ok, deadline: float, **par
     raise ApiError("BAD_OUTPUT", log=f"복구도 실패: {config.redact(r['content'][:200])!r}")
 
 
+def _to_contract(move, *args) -> dict:
+    """`to_ingredient_list`·`to_recipes`를 감싼다. 모델 출력이 예상 밖이라 옮기다 터지면 BAD_OUTPUT.
+
+    사양은 프록시 내부 오류를 UPSTREAM으로 두지만(→ UNIT_proxy 오류표), 원인이 **모델 출력**이면
+    BAD_OUTPUT이 사실에 가깝고 다시 시도하면 다른 출력이 와서 실제로 복구된다. 두 함수가 이미
+    "쓸 수 있는 레시피가 없음"을 BAD_OUTPUT으로 내는 것과도 같은 결이다.
+    값 검증에서 거르지 못한 형태가 남아 있을 때의 방어선이다.
+    """
+    try:
+        return move(*args)
+    except ApiError:
+        raise
+    except (TypeError, ValueError, KeyError, IndexError, AttributeError, OverflowError) as err:
+        raise ApiError("BAD_OUTPUT", log=f"출력을 계약으로 옮기지 못함: {type(err).__name__}") from None
+
+
 # ── 1단계: 이미지 → 식재료 (→ PRD_step1.md) ──────────────────────────────
 
 # 프롬프트에 박는 목록이자 화면 그룹의 순서. 늘리려면 프롬프트·값 검증(여기)·화면(app.js)을 함께.
@@ -318,6 +335,7 @@ category는 """ + "·".join(CATEGORIES) + """ 중 하나, confidence는 high·me
 
 MAX_IMAGE_CHARS = 4 * 1024 * 1024                 # 전송 후 상한 4MB (→ UNIT_image_input.md)
 MAX_BODY_BYTES = MAX_IMAGE_CHARS + 1024
+BODY_READ_TIMEOUT_S = 20                          # Content-Length만큼 본문이 오기를 기다리는 시한
 _DATA_URI_RE = re.compile(r"^data:image/(jpeg|png|webp);base64,([A-Za-z0-9+/=\s]+)$")
 
 NAME_MAX, LIST_MAX, UNSURE_MAX = 40, 100, 200
@@ -371,8 +389,11 @@ def to_ingredient_list(raw: dict) -> dict:
             "source": "vision",
         })
 
+    # unsure가 list가 아니면(문자열·dict·숫자) 없는 것으로 본다. 문자열을 그대로 슬라이스하면
+    # 글자 하나하나가 항목이 되고, dict·숫자는 예외가 된다(실측: KeyError·TypeError).
+    raw_unsure = raw.get("unsure")
     unsure = []
-    for u in (raw.get("unsure") or [])[:LIST_MAX]:
+    for u in (raw_unsure if isinstance(raw_unsure, list) else [])[:LIST_MAX]:
         text, _ = _clean(u, UNSURE_MAX)
         if text:
             unsure.append(text)
@@ -410,7 +431,7 @@ def handle_vision(body: dict) -> tuple[dict, dict]:
     ]}]
     raw, meta = ask_for_json(model, messages, shape_ok=_vision_shape_ok, deadline=deadline,
                              **VISION_PARAMS)
-    return to_ingredient_list(raw), meta
+    return _to_contract(to_ingredient_list, raw), meta
 
 
 # ── 2단계: 식재료 → 레시피 (→ PRD_step2.md) ──────────────────────────────
@@ -473,6 +494,10 @@ def recipe_prompt(ingredients: list[dict], count: int) -> str:
 def _int_in(value, lo: int, hi: int) -> int | None:
     """`20`, `20.0`, `"20분"`을 20으로. 범위 밖이거나 숫자가 없으면 None."""
     if isinstance(value, bool):
+        return None
+    # json.loads는 NaN·Infinity를 그냥 받는다. int(nan)은 ValueError, int(inf)는 OverflowError가 되어
+    # to_recipes 전체를 중단시킨다 — 멀쩡한 레시피까지 잃지 않도록 여기서 None으로 접는다.
+    if isinstance(value, float) and not math.isfinite(value):
         return None
     if isinstance(value, (int, float)):
         n = int(value)
@@ -550,7 +575,7 @@ def handle_recipe(body: dict) -> tuple[dict, dict]:
     raw, meta = ask_for_json(model, messages, shape_ok=_recipe_shape_ok, deadline=deadline,
                              extra={"reasoning": RECIPE_REASONING, "seed": seed}, **RECIPE_PARAMS)
     meta["seed"] = seed
-    return to_recipes(raw, count), meta
+    return _to_contract(to_recipes, raw, count), meta
 
 
 # ── HTTP ────────────────────────────────────────────────────────────────
@@ -659,13 +684,36 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", ""))
         except ValueError:
             raise ApiError("BAD_REQUEST", "본문 길이가 없습니다.") from None
+        if length < 0:
+            # read(-1)은 EOF까지 기다린다 — 음수를 그냥 넘기면 보낸 쪽이 연결을 닫을 때까지
+            # 이 스레드가 묶인다. 브라우저는 음수를 보내지 않으므로 거절해도 잃을 것이 없다.
+            self.close_connection = True
+            raise ApiError("BAD_REQUEST", "본문 길이가 올바르지 않습니다.")
         if length > MAX_BODY_BYTES:
             self.close_connection = True           # 남은 본문을 읽지 않고 끊는다
             raise ApiError("BAD_REQUEST", "사진이 너무 큽니다(4MB 초과). 더 작은 사진을 올려 주세요.")
         try:
-            return json.loads(self.rfile.read(length))
+            raw = self._read_body_bytes(length)
+        except TimeoutError:
+            self.close_connection = True
+            raise ApiError("BAD_REQUEST", "본문이 끝까지 오지 않았습니다.") from None
+        try:
+            return json.loads(raw)
         except ValueError:
             raise ApiError("BAD_REQUEST", "본문이 JSON이 아닙니다.") from None
+
+    def _read_body_bytes(self, length: int) -> bytes:
+        """본문을 읽는다. **읽는 동안에만** 시한을 둔다.
+
+        Content-Length가 실제보다 크면 read가 끝나지 않는다. 핸들러 전체(Handler.timeout)에
+        시한을 걸면 브라우저가 열어 둔 유지 연결까지 끊겨 로그가 시끄러워지므로 여기만 건다.
+        """
+        prev = self.connection.gettimeout()
+        self.connection.settimeout(BODY_READ_TIMEOUT_S)
+        try:
+            return self.rfile.read(length)
+        finally:
+            self.connection.settimeout(prev)
 
 
 # ── 실행 ────────────────────────────────────────────────────────────────
