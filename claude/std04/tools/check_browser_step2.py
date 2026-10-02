@@ -39,7 +39,7 @@ ORDER = bc.recipes_body(
     R("r-t-2", "B 바로 30분", minutes=30, uses=("우유",), difficulty="보통"),
     R("r-t-3", "C 바로 15분", minutes=15, uses=("당근", "양파"), steps=("하나", "둘", "셋"), servings=1),
     R("r-t-4", "D 이름바꿈 5분", minutes=5, uses=("계란", "두부")), elapsed_ms=1234)
-BAD = {"ok": False, "error": {"code": "BAD_OUTPUT", "message": "결과를 읽지 못했습니다. 다시 시도하세요.", "retryable": True}}
+BAD = {"ok": False, "error": {"code": "BAD_OUTPUT", "message": "모델이 보낸 답을 읽지 못했습니다. 무료 모델이 가끔 그렇습니다 — 사진 탓이 아닙니다. 한 번 더 시도해 주세요.", "retryable": True}}
 FAKE_EMPTY_VISION = {"ok": True, "meta": {"elapsed_ms": 300}, "data": {"items": [], "unsure": [], "analyzed_at": "2026-09-14T10:00:00+09:00"}}
 
 

@@ -30,7 +30,9 @@ LOCAL_FALLBACK = Path(__file__).resolve().parent / ".env"
 KEY_PREFIX = "sk-or-v1-"
 
 # 로그·예외·화면 출력에서 키를 가릴 때 쓴다. 앞 4글자만 남긴다.
-_KEY_RE = re.compile(r"sk-or-v1-[A-Za-z0-9]{4}[A-Za-z0-9]*")
+# 문자 클래스에 -_ 를 넣어 둔다. 지금 키는 73자 영숫자뿐이지만, 형식이 바뀌어 하이픈이나
+# 밑줄이 섞이면 영숫자만 받는 정규식은 **거기서 멈춰 뒷부분을 그대로 흘린다.**
+_KEY_RE = re.compile(r"sk-or-v1-[A-Za-z0-9\-_]{4}[A-Za-z0-9\-_]*")
 
 
 class MissingKeyError(RuntimeError):

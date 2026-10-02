@@ -57,13 +57,24 @@ NO_OPEN=1 python3 server.py  # 브라우저 자동 실행 없이
 
 | code | 언제 | retryable | 화면 문구(예) |
 |---|---|---|---|
-| `NO_KEY` | `config.MissingKeyError`, 또는 OpenRouter 401·403(키 거부) | false | 키가 설정되지 않았습니다. `.env.example`을 보세요. / 키가 거부되었습니다(폐기되었거나 잘못된 키). |
-| `NO_MODEL` | `Models` 파일이 없거나 해당 모델 줄이 없음 | false | `Models` 파일에 모델이 적혀 있지 않습니다. CLAUDE.md의 모델 표를 보세요. |
+| `NO_KEY` | `config.MissingKeyError`, 또는 OpenRouter 401·403(키 거부) | false | 이 컴퓨터에 OpenRouter 키가 설정되어 있지 않습니다. 앱을 켠 사람에게 알려 주세요. / 키가 거부되었습니다(폐기되었거나 잘못된 키). openrouter.ai/keys 에서 키를 다시 발급해 주세요. |
+| `NO_MODEL` | `Models` 파일이 없거나 해당 모델 줄이 없음 | false | 쓸 모델이 정해져 있지 않습니다. 앱을 켠 사람에게 알려 주세요. |
 | `RATE_LIMIT` | OpenRouter 429 | true | 무료 모델 사용량이 찼습니다. 잠시 후 다시 시도하세요. |
-| `UPSTREAM` | OpenRouter 5xx·연결 실패·200 안의 `error` (그 밖의 4xx와 프록시 내부 오류도 여기로 — 4xx는 retryable false) | true | 모델 서버가 응답하지 않습니다. |
-| `TIMEOUT` | 응답 없음 | true | 시간이 너무 오래 걸립니다. |
-| `BAD_OUTPUT` | JSON 파싱 실패 (→ `UNIT_json_contract.md`) | true | 결과를 읽지 못했습니다. 다시 시도하세요. |
+| `UPSTREAM` | OpenRouter 5xx·연결 실패·200 안의 `error` (그 밖의 4xx와 프록시 내부 오류도 여기로 — 4xx는 retryable false) | true | 모델 서버에 닿지 못했습니다. 이 앱이나 사진의 문제가 아닙니다. 잠시 뒤 다시 시도해 주세요. |
+| `TIMEOUT` | 응답 없음 | true | N초를 기다렸지만 답이 오지 않았습니다. 무료 모델이 붐빌 때 가끔 그렇습니다. 잠시 뒤 다시 시도해 주세요. (N은 그 단계의 예산) |
+| `BAD_OUTPUT` | JSON 파싱 실패 (→ `UNIT_json_contract.md`), **또는 모델 출력을 계약으로 옮기다 난 내부 오류** | true | 모델이 보낸 답을 읽지 못했습니다. 무료 모델이 가끔 그렇습니다 — 사진 탓이 아닙니다. 한 번 더 시도해 주세요. |
 | `BAD_REQUEST` | 입력 검증 실패 | false | (입력 문제를 구체적으로) |
+
+**문구는 세 가지를 담는다**: 무슨 일이 일어났는가 · 사용자 잘못인가 아닌가 · 이제 무엇을
+하면 되는가. 코드 이름(`BAD_OUTPUT` 등)과 저장소 파일 이름(`.env.example`·`Models`)은
+화면에 쓰지 않는다 — 쓰는 사람에게 뜻이 없다. 개발자용 안내는 서버 터미널 로그로 보낸다.
+개발 전용 폴더(`tools/`)의 스크립트도 안내하지 않는다. 지워도 앱이 돌아야 하는 폴더라
+지운 환경에서는 없는 파일을 가리키게 된다.
+
+`BAD_OUTPUT`이 "내부 오류"까지 받는 이유: 모델 출력을 `IngredientList`·`Recipe[]`로 옮기다
+난 `TypeError`·`ValueError` 따위는 **다시 시도하면 다른 출력이 와서 실제로 풀린다.**
+`UPSTREAM`("모델 서버에 닿지 못했습니다")은 그 상황을 틀리게 설명한다. 모델 출력과 무관한
+내부 오류는 그대로 `UPSTREAM`이다.
 
 ## 입력 검증
 
@@ -72,6 +83,14 @@ NO_OPEN=1 python3 server.py  # 브라우저 자동 실행 없이
 - 모델 ID는 요청 본문에서 받지 않는다. **항상 `Models` 파일에서 읽는다.** (요청으로 모델을 고르게 하면 유료 모델을 호출당할 수 있다.)
 - `max_tokens`·`temperature` 등 파라미터도 요청에서 받지 않는다. 단계별 고정값을 서버가 정한다.
 - 이미지 본문 크기 상한을 둔다(→ `UNIT_image_input.md`). 넘으면 `BAD_REQUEST`.
+- **`Content-Length`를 그대로 믿지 않는다.** 음수면 `BAD_REQUEST`("본문 길이가 올바르지 않습니다.") —
+  `read(-1)`은 EOF까지 기다려 요청 스레드가 영구히 묶인다. 상한을 넘어도 `BAD_REQUEST`.
+- **본문을 읽는 동안에만** 소켓 시한을 건다(`BODY_READ_TIMEOUT_S = 20`초). 넘기면
+  `BAD_REQUEST`("본문이 끝까지 오지 않았습니다."). 적힌 길이보다 적게 보내고 연결을 열어 두는
+  요청을 막는다. 핸들러 **전체**에 시한을 걸지 말 것 — 브라우저가 열어 둔 유지 연결이 그때마다
+  끊겨 로그가 쌓이고, 22초짜리 분석 요청과 숫자를 맞춰야 하는 문제가 생긴다.
+  (이 두 경로는 브라우저로는 도달할 수 없다. 같은 기기의 다른 프로그램만 보낼 수 있어
+  문구는 개발자가 읽는 것으로 둔다.)
 
 ## 검증
 

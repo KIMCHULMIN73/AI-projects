@@ -70,11 +70,16 @@ const active = () => profiles.find((p) => p.id === activeId);
  * 페이지가 열리면서 자동으로 일어난 쓰기(init의 기본 프로필 만들기)이기 때문이다 —
  * 아무것도 하지 않았는데 화면이 아래로 움직이면 사용자는 무슨 일이 난 줄 안다.
  * 안내는 어느 쪽이든 띄운다(→ PRD_step3 "저장이 실패할 때": 어느 경우든 반드시 알린다).
+ *
+ * `clear`가 false면 **성공해도 떠 있는 안내를 지우지 않는다.** 한 동작이 쓰기를 두 번 할 때
+ * (init: profiles 다음 activeProfile) 큰 값이 실패해 안내가 떴는데 뒤이은 작은 값이 성공해
+ * 그 안내를 지워 버리면, 실패가 없었던 것처럼 보인다 — 위 "어느 경우든 반드시 알린다"와
+ * 어긋난다.
  */
-function persist(key, value, { send = true } = {}) {
+function persist(key, value, { send = true, clear = true } = {}) {
   const r = writeJSON(key, value);
   if (r.ok) {
-    notice(null);
+    if (clear) notice(null);
     return 'ok';
   }
   if (r.quota) {
@@ -116,10 +121,22 @@ function setProfiles(next) {
   return true;
 }
 
+/** 지금 프로필을 바꾼다. 용량 초과면 **반영하지 않는다**(→ PRD_step3 "저장이 실패할 때").
+ *
+ * 반영해 버리면 화면만 바뀌고 `activeProfile`은 저장되지 않아, F5를 누르면 조용히 원래
+ * 프로필로 돌아간다 — 이 프로젝트가 3단계에서 피하기로 한 "저장되지 않았는데 저장된 것처럼
+ * 보이는" 상태 그대로다. 저장 차단은 사양대로 메모리에서만 반영한다(프로필이 없으면 앱이
+ * 돌지 않는다).
+ */
 function setActive(id, opts) {
+  const prev = activeId;
   activeId = id;
-  persist(KEYS.activeProfile, id, opts);
+  if (persist(KEYS.activeProfile, id, opts) === 'quota') {
+    activeId = prev;                 // 전환하지 않은 것으로 되돌린다. saved는 건드리지 않았다
+    return false;
+  }
   saved = readSaved(id);
+  return true;
 }
 
 function createProfile(name) {
@@ -357,7 +374,9 @@ function init() {
     activeId = id;
     saved = readSaved(id);
   } else {
-    setActive(id, { send: false });   // 페이지를 여는 중이다 — 안내만 하고 화면은 움직이지 않는다
+    // 페이지를 여는 중이다 — 안내만 하고 화면은 움직이지 않는다. clear:false 는 바로 위
+    // profiles 쓰기가 실패해 띄운 안내를 이 성공이 지우지 않게 한다.
+    setActive(id, { send: false, clear: false });
   }
   renderAll();
 }

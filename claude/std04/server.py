@@ -61,12 +61,12 @@ STATIC_FILES = {
 # ── 오류 코드 (→ UNIT_proxy.md "오류 코드") ────────────────────────────────
 # 한국어 문구는 여기서만 만든다. 화면은 옮기기만 한다(→ UNIT_ui_state.md).
 ERRORS: dict[str, tuple[int, bool, str]] = {
-    "NO_KEY": (503, False, "키가 설정되지 않았습니다. .env.example을 보세요."),
-    "NO_MODEL": (503, False, "Models 파일에 모델이 적혀 있지 않습니다. CLAUDE.md의 모델 표를 보세요."),
+    "NO_KEY": (503, False, "이 컴퓨터에 OpenRouter 키가 설정되어 있지 않습니다. 앱을 켠 사람에게 알려 주세요."),
+    "NO_MODEL": (503, False, "쓸 모델이 정해져 있지 않습니다. 앱을 켠 사람에게 알려 주세요."),
     "RATE_LIMIT": (429, True, "무료 모델 사용량이 찼습니다. 잠시 후 다시 시도하세요."),
-    "UPSTREAM": (502, True, "모델 서버가 응답하지 않습니다."),
-    "TIMEOUT": (504, True, "시간이 너무 오래 걸립니다."),
-    "BAD_OUTPUT": (502, True, "결과를 읽지 못했습니다. 다시 시도하세요."),
+    "UPSTREAM": (502, True, "모델 서버에 닿지 못했습니다. 이 앱이나 사진의 문제가 아닙니다. 잠시 뒤 다시 시도해 주세요."),
+    "TIMEOUT": (504, True, "기다렸지만 답이 오지 않았습니다. 무료 모델이 붐빌 때 가끔 그렇습니다. 잠시 뒤 다시 시도해 주세요."),
+    "BAD_OUTPUT": (502, True, "모델이 보낸 답을 읽지 못했습니다. 무료 모델이 가끔 그렇습니다 — 사진 탓이 아닙니다. 한 번 더 시도해 주세요."),
     "BAD_REQUEST": (400, False, "요청이 올바르지 않습니다."),
 }
 
@@ -140,8 +140,17 @@ def _can_retry(deadline: float) -> bool:
     return deadline - time.monotonic() - RETRY_WAIT_S >= MIN_ATTEMPT_S
 
 
+def _timeout_msg(budget_s: float | None) -> str | None:
+    """`N초를 기다렸지만…`. 예산을 모르면 None — ERRORS의 기본 문구가 쓰인다."""
+    if not budget_s:
+        return None
+    return (f"{int(budget_s)}초를 기다렸지만 답이 오지 않았습니다. "
+            "무료 모델이 붐빌 때 가끔 그렇습니다. 잠시 뒤 다시 시도해 주세요.")
+
+
 def call_model(model: str, messages: list, *, max_tokens: int, temperature: float,
-               deadline: float, response_format: dict | None = None, extra: dict | None = None) -> dict:
+               deadline: float, response_format: dict | None = None, extra: dict | None = None,
+               budget_s: float | None = None) -> dict:
     """한 번 호출하고 `{"content", "finish", "tokens_in", "tokens_out", "attempts"}`를 돌려준다.
 
     `deadline`은 time.monotonic() 기준의 **총 예산 끝**이다. 시도마다 새 타임아웃을
@@ -160,7 +169,7 @@ def call_model(model: str, messages: list, *, max_tokens: int, temperature: floa
         attempts += 1
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise ApiError("TIMEOUT", log="예산 소진")
+            raise ApiError("TIMEOUT", _timeout_msg(budget_s), log="예산 소진")
         try:
             headers = config.auth_header(**{"X-Title": APP_TITLE})
         except config.MissingKeyError as exc:
@@ -187,10 +196,12 @@ def call_model(model: str, messages: list, *, max_tokens: int, temperature: floa
                                retryable=False, log=f"HTTP {status}") from None
             retry_reason = f"HTTP {status}"
         except (TimeoutError, socket.timeout):
-            raise ApiError("TIMEOUT", log=f"{attempts}번째 시도에서 시간 초과") from None
+            raise ApiError("TIMEOUT", _timeout_msg(budget_s),
+                           log=f"{attempts}번째 시도에서 시간 초과") from None
         except urllib.error.URLError as exc:
             if isinstance(exc.reason, (TimeoutError, socket.timeout)):
-                raise ApiError("TIMEOUT", log=f"{attempts}번째 시도에서 시간 초과") from None
+                raise ApiError("TIMEOUT", _timeout_msg(budget_s),
+                               log=f"{attempts}번째 시도에서 시간 초과") from None
             retry_reason = f"연결 실패: {config.redact(exc.reason)}"
         except (ValueError, OSError) as exc:          # JSON이 아닌 본문, 끊긴 연결
             retry_reason = f"응답 본문 오류: {type(exc).__name__}"
@@ -432,7 +443,7 @@ def handle_vision(body: dict) -> tuple[dict, dict]:
         {"type": "image_url", "image_url": {"url": image}},
     ]}]
     raw, meta = ask_for_json(model, messages, shape_ok=_vision_shape_ok, deadline=deadline,
-                             **VISION_PARAMS)
+                             budget_s=VISION_BUDGET_S, **VISION_PARAMS)
     return _to_contract(to_ingredient_list, raw), meta
 
 
@@ -575,7 +586,8 @@ def handle_recipe(body: dict) -> tuple[dict, dict]:
     seed = secrets.randbelow(2**31 - 1) + 1
     messages = [{"role": "user", "content": recipe_prompt(ingredients, count)}]
     raw, meta = ask_for_json(model, messages, shape_ok=_recipe_shape_ok, deadline=deadline,
-                             extra={"reasoning": RECIPE_REASONING, "seed": seed}, **RECIPE_PARAMS)
+                             extra={"reasoning": RECIPE_REASONING, "seed": seed},
+                             budget_s=RECIPE_BUDGET_S, **RECIPE_PARAMS)
     meta["seed"] = seed
     return _to_contract(to_recipes, raw, count), meta
 
@@ -722,7 +734,10 @@ class Handler(BaseHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = False     # 다른 프로세스가 쓰는 포트를 가로채지 않는다
+    # SO_REUSEADDR은 **TIME_WAIT 위로만** 다시 열어 준다. 살아 있는 리스너는 가로채지 못한다
+    # (그건 SO_REUSEPORT다). 끄면 Ctrl+C 직후 60초 안에 다시 띄울 때 EADDRINUSE가 나고,
+    # server.py가 "다른 프로그램이 쓰고 있습니다"라고 **틀린 안내**를 하며 죽는다.
+    allow_reuse_address = True
 
 
 def bind(requested: str | None) -> Server:
