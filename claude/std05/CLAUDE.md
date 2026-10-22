@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **아직 비어 있다 (2026-10-21 기준).** 코드·사양(PRD)·실행 방법이 생기면 이 문서에 프로젝트 개요, 실행/검증 명령, 구조를 채울 것. 형식은 `../std04/CLAUDE.md`를 참고한다.
 
+PRD 작성과 일정 관리는 `.claude/agents/product-manager.md` 서브에이전트가 한다. `PRD.md`(색인·일정표) + `PRD_step<N>.md` + `units/` 구조로 쓰고, 문서만 고치며 앱 코드는 건드리지 않는다. 커밋은 하지 않는다.
+
 ## 리포지토리 관례 (형제 프로젝트에서 이어지는 것)
 
 git 루트는 두 단계 위(`../..`, `AI-projects`)이고 원격은 공개 GitHub이다. 형제(`../std01` 숫자 인식기, `../std02` 할 일 관리 앱, `../std03` 퀴즈 게임, `../std04` 냉장고 사진 레시피 추천)와 공유하는 코드·의존성은 없지만 작업 방식은 이어진다:
