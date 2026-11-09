@@ -13,6 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `product-manager` | PRD(목표·요구사항·단계)와 일정표 | 문서만. 형제 프로젝트의 PRD 구조를 따르지 않고 새로 정한다(진입점은 `PRD.md`, 일정표도 거기에만) |
 | `backend-developer` | 서버 구조, API 계약, 데이터 저장, 외부 호출, 키 처리 | 서버 코드 |
 | `frontend-developer` | 화면, 반응형(넓은 화면·480px), 접근성 | 클라이언트 코드 |
+| `ai-integration-expert` | OpenRouter·DeepSeek 호출, 프롬프트, 응답 검증 | 모델 호출 모듈·프롬프트 |
 | `quality-assurance-engineer` | 기능·오류·성능 검증, 코드 리뷰, 사용성 제안 | `tools/` 검증 스크립트만. 앱 코드는 보고만 |
 
 사양은 `product-manager`만 고친다. 다른 에이전트는 사양과 어긋난 점을 보고만 한다.
