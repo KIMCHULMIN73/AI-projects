@@ -6,7 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **아직 비어 있다 (2026-10-21 기준).** 코드·사양(PRD)·실행 방법이 생기면 이 문서에 프로젝트 개요, 실행/검증 명령, 구조를 채울 것. 형식은 `../std04/CLAUDE.md`를 참고한다.
 
-PRD 작성과 일정 관리는 `.claude/agents/product-manager.md` 서브에이전트가 한다. 형제 프로젝트의 PRD 구조를 따르지 않고 이 제품에 맞게 새로 정한다(진입점은 `PRD.md`, 일정표도 거기에만). 문서만 고치며 앱 코드는 건드리지 않는다. 커밋은 하지 않는다.
+### 서브에이전트 (`.claude/agents/`) — 모두 커밋은 하지 않는다
+
+| 이름 | 맡는 일 | 고치는 범위 |
+|---|---|---|
+| `product-manager` | PRD(목표·요구사항·단계)와 일정표 | 문서만. 형제 프로젝트의 PRD 구조를 따르지 않고 새로 정한다(진입점은 `PRD.md`, 일정표도 거기에만) |
+| `backend-developer` | 서버 구조, API 계약, 데이터 저장, 외부 호출, 키 처리 | 서버 코드 |
+
+사양은 `product-manager`만 고친다. 다른 에이전트는 사양과 어긋난 점을 보고만 한다.
 
 ## 리포지토리 관례 (형제 프로젝트에서 이어지는 것)
 
