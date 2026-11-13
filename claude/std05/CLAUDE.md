@@ -18,6 +18,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 사양은 `product-manager`만 고친다. 다른 에이전트는 사양과 어긋난 점을 보고만 한다.
 
+## OpenRouter API 키 — 형제 프로젝트와 같은 키를 쓴다
+
+키는 저장소 **밖** `~/.config/openrouter/env`(디렉터리 700, 파일 600) 한 곳에 있고 std04와 함께 쓴다. 저장소 안에는 키가 없다.
+
+- **키를 읽는 통로는 `config.py` 하나뿐이다.** 찾는 순서: 환경변수 `OPENROUTER_API_KEY` → `~/.config/openrouter/env` → `std05/.env`(폴백, 경고). 다른 코드에서 `.env`를 직접 열지 않는다. `config.py`는 std04의 것을 그대로 복사했다(경로 주석만 다름).
+- 호출 헤더는 `config.auth_header()`로 만들고, 예외·응답·헤더를 찍을 때는 `config.redact()`를 거친다.
+- 키는 서버에서만 쓴다. 브라우저로 내려가는 경로를 만들지 않는다.
+- 설정·교체 방법은 `.env.example`에 있다. `.gitignore`가 `.env`·`.env.*`·`*.key`·`*.pem`·`secrets/`를 막는다.
+
+```
+python3 -B config.py    # 키 진단: 출처·길이·형식·마스킹만 찍는다(키 자체는 안 찍음). 정상이면 종료코드 0
+```
+
+2026-11-13 확인: 키 출처는 `~/.config/openrouter/env`, 형식 정상, `GET /api/v1/key` 200(무료 등급).
+
 ## 리포지토리 관례 (형제 프로젝트에서 이어지는 것)
 
 git 루트는 두 단계 위(`../..`, `AI-projects`)이고 원격은 공개 GitHub이다. 형제(`../std01` 숫자 인식기, `../std02` 할 일 관리 앱, `../std03` 퀴즈 게임, `../std04` 냉장고 사진 레시피 추천)와 공유하는 코드·의존성은 없지만 작업 방식은 이어진다:
@@ -29,7 +44,6 @@ git 루트는 두 단계 위(`../..`, `AI-projects`)이고 원격은 공개 GitH
 - **사양이 있으면 PRD가 원본이다.** 사양과 어긋나게 구현해야 하면 PRD와 이 문서를 함께 고친다.
 - **이 문서를 작업 로그로 계속 갱신한다.** 설계 판단, 사양과 어긋난 지점, 그 이유를 남긴다.
 - 반복 작업은 `.claude/commands/`에 슬래시 명령어로, 검토·최적화 같은 역할은 `.claude/agents/`에 서브에이전트로 정리한다(std03·std04).
-- API 키는 `.env`(gitignore)에 두고 `.env.example`만 커밋한다(std04의 `config.py` 방식).
 - 문서는 한국어로 쓴다.
 
 ## 이 환경에서 쓸 수 있는 것 (Raspberry Pi, Linux)
