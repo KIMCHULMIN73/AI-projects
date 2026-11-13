@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>AI 공감 다이어리</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#entry-input">오늘의 한 줄 쓰러 가기</a>
+
+  <!-- app.js가 뜨지 못하면(파일을 직접 열었을 때 등) 잠시 뒤 이 안내가 보인다. 정상 실행이면 app.js가 숨긴다. -->
+  <div class="boot-notice" id="boot-notice" role="status">
+    <p class="boot-notice__title">
+      <span aria-hidden="true">📔</span> 다이어리를 펼치려면 서버가 필요해요
+    </p>
+    <p>
+      이 파일을 직접 여시면 AI에게 일기를 보낼 수 없어요.
+      터미널에서 이 폴더로 이동한 뒤 <code>./run.sh</code>로 실행하고,
+      브라우저에서 <code>http://127.0.0.1:8020/</code>을 열어 주세요.
+    </p>
+  </div>
+
+  <header class="site-header">
+    <div class="site-header__inner">
+      <svg class="site-header__mark" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true" focusable="false">
+        <rect x="9" y="6" width="30" height="36" rx="5" fill="#f3d9b4" stroke="#8a5a3b" stroke-width="2"/>
+        <rect x="9" y="6" width="7" height="36" rx="3" fill="#d9a77c" stroke="#8a5a3b" stroke-width="2"/>
+        <path d="M27.5 30.5c-3.6-2.6-6-4.6-6-7.2 0-1.9 1.4-3.3 3.1-3.3 1.2 0 2.2.6 2.9 1.6.7-1 1.7-1.6 2.9-1.6 1.7 0 3.1 1.4 3.1 3.3 0 2.6-2.4 4.6-6 7.2z" fill="#d9775a"/>
+      </svg>
+      <div>
+        <h1 class="site-title">공감 다이어리</h1>
+        <p class="site-subtitle">오늘 있었던 일을 한 줄 적으면, 마음을 읽고 답장을 써 드려요.</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="page" id="main">
+    <section class="card card--paper write" aria-labelledby="write-title">
+      <h2 class="card__title" id="write-title">
+        오늘의 한 줄 <span class="today" id="today"></span>
+      </h2>
+
+      <form class="write__form" id="entry-form" novalidate>
+        <label class="write__label" for="entry-input">오늘 어떤 일이 있었나요?</label>
+        <div class="write__row">
+          <input class="write__input" id="entry-input" name="text" type="text"
+                 maxlength="200" autocomplete="off" enterkeyhint="send"
+                 placeholder="예: 오랜만에 친구랑 통화하면서 한참 웃었어요"
+                 aria-describedby="entry-help entry-count entry-hint">
+          <button class="btn btn--primary write__submit" id="entry-submit" type="submit" disabled>
+            마음 전하기
+          </button>
+        </div>
+        <div class="write__meta">
+          <p class="write__help" id="entry-help">엔터를 눌러도 보낼 수 있어요.</p>
+          <p class="write__count" id="entry-count">200자 더 쓸 수 있어요</p>
+        </div>
+        <p class="write__hint" id="entry-hint" hidden></p>
+      </form>
+    </section>
+
+    <!-- 화면 읽기 프로그램용 알림. 결과·오류·저장 여부를 짧게 읽어 준다. -->
+    <p class="visually-hidden" id="announcer" aria-live="polite" aria-atomic="true"></p>
+
+    <section class="card waiting" id="waiting" hidden aria-labelledby="waiting-title">
+      <div class="waiting__body">
+        <span class="waiting__dots" aria-hidden="true"><span></span><span></span><span></span></span>
+        <div>
+          <h2 class="waiting__title" id="waiting-title">답장을 쓰고 있어요</h2>
+          <p class="waiting__phrase" id="waiting-phrase">적어 주신 하루를 천천히 읽고 있어요.</p>
+          <p class="waiting__elapsed" id="waiting-elapsed">보통 몇 초면 와요. 길어도 40초 안쪽이에요.</p>
+        </div>
+      </div>
+      <button class="btn btn--ghost" id="cancel-button" type="button">그만 기다릴게요</button>
+    </section>
+
+    <section class="card notice notice--error" id="error-box" hidden aria-labelledby="error-title" tabindex="-1">
+      <h2 class="notice__title" id="error-title">
+        <span aria-hidden="true">🍂</span> <span id="error-heading">답장을 받지 못했어요</span>
+      </h2>
+      <p class="notice__text" id="error-text"></p>
+    </section>
+
+    <section class="card result" id="result" hidden aria-labelledby="result-title" tabindex="-1">
+      <h2 class="visually-hidden" id="result-title">오늘의 답장</h2>
+      <p class="result__quote" id="result-quote"></p>
+      <div class="result__emotion">
+        <span class="emotion-badge" id="result-badge" aria-hidden="true"></span>
+        <div>
+          <p class="result__emotion-name" id="result-emotion"></p>
+          <div class="intensity" id="result-intensity"></div>
+        </div>
+      </div>
+      <p class="result__message" id="result-message"></p>
+      <div id="result-crisis"></div>
+      <p class="result__saved" id="result-saved"></p>
+    </section>
+
+    <section class="card history" aria-labelledby="history-title">
+      <div class="history__head">
+        <h2 class="card__title" id="history-title">지난 일기</h2>
+        <p class="history__count" id="history-count"></p>
+      </div>
+      <p class="notice notice--soft" id="storage-notice" hidden></p>
+      <p class="history__empty" id="history-empty" hidden>
+        아직 적은 일기가 없어요. 첫 한 줄을 기다리고 있을게요.
+      </p>
+      <ol class="history__list" id="history-list"></ol>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>답장은 AI가 쓴 글이라 정확하지 않을 수 있어요. 힘든 마음이 오래가면 가까운 사람이나 전문가와 이야기해 주세요.</p>
+  </footer>
+
+  <template id="crisis-template">
+    <aside class="crisis" aria-labelledby="crisis-title">
+      <h3 class="crisis__title" id="crisis-title">
+        <span aria-hidden="true">🤝</span> 혼자 견디지 않으셔도 괜찮아요
+      </h3>
+      <p class="crisis__text">지금 마음을 이야기할 수 있는 곳이 있어요. 언제든 전화해 주세요.</p>
+      <ul class="crisis__list">
+        <li class="crisis__item">
+          <span class="crisis__name">자살예방상담전화 <span class="crisis__time">(24시간)</span></span>
+          <a class="btn btn--call" href="tel:109">109 <span class="visually-hidden">자살예방상담전화에</span> 전화하기</a>
+        </li>
+        <li class="crisis__item">
+          <span class="crisis__name">정신건강위기상담</span>
+          <a class="btn btn--call" href="tel:1577-0199">1577-0199 <span class="visually-hidden">정신건강위기상담에</span> 전화하기</a>
+        </li>
+      </ul>
+    </aside>
+  </template>
+</body>
+</html>
