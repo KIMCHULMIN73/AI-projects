@@ -34,6 +34,7 @@ const ERROR_TEXT = {
   TOO_LONG: `글이 조금 길어요. ${MAX_LEN}자 안으로 줄여서 다시 보내 주세요.`,
   NO_KEY: '지금은 AI와 이어질 준비가 되어 있지 않아요. 앱을 실행한 분께 API 키 설정을 확인해 달라고 부탁해 주세요.',
   RATE_LIMIT: '지금 이야기를 나누려는 분이 많아 잠시 쉬어 가야 해요. 1분쯤 뒤에 다시 보내 주세요.',
+  DAILY_LIMIT: '오늘 AI가 답장할 수 있는 횟수를 모두 썼어요. 하루 한도가 풀린 뒤에 다시 보내 주세요.',
   TIMEOUT: '답장을 쓰는 데 너무 오래 걸려서 멈췄어요. 잠시 뒤에 다시 보내 주세요.',
   UPSTREAM: 'AI 쪽 사정으로 답장을 받지 못했어요. 잠시 뒤에 다시 보내 주세요.',
   BAD_OUTPUT: '답장이 제대로 만들어지지 않았어요. 한 번 더 보내 주시면 다시 써 볼게요.',
@@ -248,7 +249,7 @@ async function analyze(text) {
   if (seq !== state.seq || outcome.cancelled) return;
   finishPending();
 
-  if (outcome.error) renderError(outcome.error);
+  if (outcome.error) renderError(outcome.error, outcome.resetAt);
   else handleSuccess(text, outcome.data);
 }
 
@@ -258,6 +259,7 @@ function interpret(res, body) {
     return data ? { data } : { error: 'BAD_OUTPUT' };
   }
   const code = body && body.error && typeof body.error.code === 'string' ? body.error.code : '';
+  if (code === 'DAILY_LIMIT') return { error: code, resetAt: body.error.reset_at };
   return { error: Object.hasOwn(ERROR_TEXT, code) ? code : codeFromStatus(res.status) };
 }
 
@@ -311,10 +313,33 @@ function renderWaiting(startedAt) {
   announce('일기를 보냈어요. 답장을 쓰는 동안 잠시 기다려 주세요.');
 }
 
-function renderError(code) {
+// 하루 한도가 풀리는 시각(epoch ms)을 "내일 오전 9시"처럼 읽기 쉬운 말로. 이상한 값이면 null.
+function describeReset(resetAt) {
+  if (!Number.isFinite(resetAt)) return null;
+  const at = new Date(resetAt);
+  const now = new Date();
+  if (Number.isNaN(at.getTime()) || at <= now || at - now > 2 * 86400000) return null;
+  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOf(at) - startOf(now)) / 86400000);
+  const day = days === 0 ? '오늘' : days === 1 ? '내일' : '모레';
+  const h = at.getHours();
+  const m = at.getMinutes();
+  return `${day} ${h < 12 ? '오전' : '오후'} ${h % 12 || 12}시${m ? ` ${m}분` : ''}`;
+}
+
+function errorMessage(code, resetAt) {
+  if (code === 'DAILY_LIMIT') {
+    const when = describeReset(resetAt);
+    if (when) return `오늘 AI가 답장할 수 있는 횟수를 모두 썼어요. ${when}부터 다시 답장해 드릴게요.`;
+  }
+  return ERROR_TEXT[code] || ERROR_TEXT.UNKNOWN;
+}
+
+function renderError(code, resetAt) {
   el.result.hidden = true;
-  el.errorHeading.textContent = code === 'NETWORK' ? '서버와 이어지지 않았어요' : '답장을 받지 못했어요';
-  el.errorText.textContent = `${ERROR_TEXT[code] || ERROR_TEXT.UNKNOWN} 쓰신 글은 입력칸에 그대로 남아 있어요.`;
+  el.errorHeading.textContent = code === 'NETWORK' ? '서버와 이어지지 않았어요'
+    : code === 'DAILY_LIMIT' ? '오늘은 여기까지 답장할 수 있어요' : '답장을 받지 못했어요';
+  el.errorText.textContent = `${errorMessage(code, resetAt)} 쓰신 글은 입력칸에 그대로 남아 있어요.`;
   el.errorBox.hidden = false;
   announce(`${el.errorHeading.textContent}. ${el.errorText.textContent}`);
 }

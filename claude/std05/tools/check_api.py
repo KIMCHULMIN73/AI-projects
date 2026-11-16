@@ -51,6 +51,7 @@ class FakeUpstream(BaseHTTPRequestHandler):
         steps = PLAN.get(model, ["ok"])
         step = steps.pop(0) if len(steps) > 1 else steps[0]
         status, payload = 200, None
+        extra_headers = {}
         if step == "ok":
             payload = {"choices": [{"finish_reason": "stop", "message": {"content": ok_content()}}]}
         elif step == "fenced":
@@ -67,6 +68,10 @@ class FakeUpstream(BaseHTTPRequestHandler):
             payload = {"choices": [{"finish_reason": "stop", "message": {"content": ""}}]}
         elif step == "429":
             status, payload = 429, {"error": {"code": 429, "message": "rate limited sk-or-v1-SECRETSECRET"}}
+        elif step == "daily":
+            status, payload = 429, {"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day. sk-or-v1-SECRETSECRET"}}
+            extra_headers = {"X-RateLimit-Limit": "50", "X-RateLimit-Remaining": "0",
+                             "X-RateLimit-Reset": str(DAILY_RESET_MS)}
         elif step == "500":
             status, payload = 500, {"error": {"code": 500, "message": "/internal/path boom"}}
         elif step == "401":
@@ -79,10 +84,16 @@ class FakeUpstream(BaseHTTPRequestHandler):
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(raw)))
+            for k, v in extra_headers.items():
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(raw)
         except OSError:
             pass
+
+
+# 하루 한도가 풀리는 시각(가짜) — 지금으로부터 몇 시간 뒤여야 서버가 믿는다
+DAILY_RESET_MS = (int(time.time()) // 3600 + 5) * 3600 * 1000
 
 
 def start(handler) -> ThreadingHTTPServer:
@@ -191,6 +202,13 @@ def main() -> int:
     s, b, _ = analyze(plan={P: ["429"], F: ["429"]})
     check("폴백까지 429 → 429 RATE_LIMIT", s == 429 and b["error"]["code"] == "RATE_LIMIT", f"{s} {b}")
     check("  오류 응답에 외부 메시지·키 없음", "SECRET" not in json.dumps(b) and "sk-or" not in json.dumps(b))
+    s, b, _ = analyze(plan={P: ["daily"], F: ["ok"]})
+    check("하루 한도 429 → 폴백 없이 429 DAILY_LIMIT + reset_at",
+          s == 429 and b["error"]["code"] == "DAILY_LIMIT" and b["error"].get("reset_at") == DAILY_RESET_MS
+          and CALLS == [P], f"{s} {b} {CALLS}")
+    check("  하루 한도 응답에 외부 메시지·키 없음", "SECRET" not in json.dumps(b) and "free-models" not in json.dumps(b))
+    s, b, _ = analyze("요즘 너무 힘들어서 다 끝내고 싶다", plan={P: ["daily"]})
+    check("위기 + 하루 한도 → 200 고정 위기 응답", s == 200 and b == llm.CRISIS_FALLBACK, f"{s} {b}")
     s, b, _ = analyze(plan={P: ["500"], F: ["500"]})
     check("5xx 둘 다 → 502 UPSTREAM", s == 502 and b["error"]["code"] == "UPSTREAM", f"{s} {b}")
     check("  내부 경로 안 새어 나감", "/internal" not in json.dumps(b))

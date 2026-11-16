@@ -41,6 +41,7 @@ ERRORS = {
     "TOO_LONG": (400, f"일기는 {llm.TEXT_MAX}자 이내로 써 주세요."),
     "NO_KEY": (500, "서버에 API 키가 설정되어 있지 않습니다. 관리자에게 문의해 주세요."),
     "RATE_LIMIT": (429, "지금 AI 사용량이 많습니다. 잠시 후 다시 시도해 주세요."),
+    "DAILY_LIMIT": (429, "오늘 쓸 수 있는 AI 답장 횟수를 모두 썼습니다. 한도가 풀린 뒤 다시 시도해 주세요."),
     "TIMEOUT": (504, "AI 응답이 너무 오래 걸립니다. 잠시 후 다시 시도해 주세요."),
     "UPSTREAM": (502, "AI 서비스에 문제가 생겼습니다. 잠시 후 다시 시도해 주세요."),
     "BAD_OUTPUT": (502, "AI 응답을 이해하지 못했습니다. 다시 시도해 주세요."),
@@ -53,9 +54,11 @@ ERRORS = {
 
 
 class ApiError(Exception):
-    def __init__(self, code: str, status: int | None = None, message: str | None = None):
+    def __init__(self, code: str, status: int | None = None, message: str | None = None,
+                 reset_at: int | None = None):
         super().__init__(code)
         self.code = code
+        self.reset_at = reset_at
         default_status, default_msg = ERRORS[code]
         self.status = status or default_status
         self.message = message or default_msg
@@ -124,7 +127,10 @@ class Handler(BaseHTTPRequestHandler):
                    "application/json; charset=utf-8", **kw)
 
     def _error(self, err: ApiError, **kw) -> None:
-        self._json(err.status, {"error": {"code": err.code, "message": err.message}}, **kw)
+        error = {"code": err.code, "message": err.message}
+        if err.reset_at is not None:
+            error["reset_at"] = err.reset_at  # DAILY_LIMIT: 한도가 풀리는 시각(epoch ms)
+        self._json(err.status, {"error": error}, **kw)
 
     def _host_ok(self) -> bool:
         return (self.headers.get("Host") or "").strip().lower() in ALLOWED_HOSTS
@@ -168,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = llm.analyze(text, log=log)
             except llm.AnalyzeError as exc:
                 log(f"analyze 실패 {exc.code}: {exc.log}")
-                raise ApiError(exc.code)
+                raise ApiError(exc.code, reset_at=exc.reset_at)
             log(f"analyze 성공 {time.monotonic() - started:.1f}s 입력 {len(text)}자 "
                 f"→ {result['emotion']}/{result['intensity']} crisis={result['crisis']}")
             self._json(200, result)

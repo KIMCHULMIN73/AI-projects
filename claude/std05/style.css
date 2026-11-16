@@ -27,15 +27,20 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; background-color: var(--paper); }
 
 body {
   margin: 0;
   min-width: 0;
+  min-height: 100vh;
   background-color: var(--paper);
+  /* 빛 번짐은 화면(viewport)에 고정한다. body 크기에 맞추면 글이 짧을 때 그 높이마다
+     무늬가 반복돼 배경에 띠가 생기고, 길 때는 번짐이 늘어난다. */
   background-image:
     radial-gradient(circle at 15% 10%, rgba(255, 255, 255, .55), transparent 45%),
     radial-gradient(circle at 85% 90%, rgba(232, 200, 160, .25), transparent 50%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
   color: var(--ink);
   font-family: var(--font);
   font-size: 1.0625rem;

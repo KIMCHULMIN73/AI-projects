@@ -380,6 +380,13 @@ def main() -> int:
             check(f"오류 {code}: 따뜻한 안내, 코드 숨김, 입력 유지",
                   b.js(S["error_visible"]) and code not in text and "mock" not in text
                   and b.js("document.getElementById('entry-input').value") == f"오류:{code} 시험", " ".join(text.split()))
+        submit(b, "오류:DAILY_LIMIT 시험")
+        done(b)
+        text = " ".join(b.js("document.getElementById('error-box').textContent").split())
+        check("오류 DAILY_LIMIT: '내일 오전 9시부터' 안내, 코드 숨김, 입력 유지",
+              b.js(S["error_visible"]) and "내일 오전 9시부터" in text and "DAILY_LIMIT" not in text
+              and "1분" not in text and b.js("document.getElementById('entry-input').value") == "오류:DAILY_LIMIT 시험", text)
+        b.shot("04-error-daily")
         b.shot("04-error-wide")
         for label, txt in [("JSON 아닌 응답", "비JSON 시험"), ("모양이 틀린 성공({})", "빈성공 시험")]:
             submit(b, txt); done(b)

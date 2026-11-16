@@ -148,19 +148,21 @@ SYSTEM_PROMPT = """너는 일기 앱의 공감 상담가다. 사용자가 오늘
 class AnalyzeError(Exception):
     """기계가 구분할 수 있는 실패. code는 server.py의 상태코드 표와 맞춘다."""
 
-    def __init__(self, code: str, log: str = ""):
+    def __init__(self, code: str, log: str = "", reset_at: int | None = None):
         super().__init__(code)
         self.code = code
         self.log = log  # 서버 로그용(redact 거쳐 찍는다). 클라이언트로 나가지 않는다.
+        self.reset_at = reset_at  # DAILY_LIMIT일 때만 — 한도가 풀리는 시각(epoch ms)
 
 
 class CallFailure(Exception):
-    """호출 한 번의 실패. kind: rate_limit / server / timeout / bad_output / upstream / no_key"""
+    """호출 한 번의 실패. kind: rate_limit / daily_limit / server / timeout / bad_output / upstream / no_key"""
 
-    def __init__(self, kind: str, log: str = ""):
+    def __init__(self, kind: str, log: str = "", reset_at: int | None = None):
         super().__init__(kind)
         self.kind = kind
         self.log = log
+        self.reset_at = reset_at  # daily_limit일 때 한도가 풀리는 시각(epoch ms), 모르면 None
 
 
 # ── 입력 ────────────────────────────────────────────────────────────────
@@ -295,6 +297,26 @@ def to_contract(obj: dict, text: str) -> dict | None:
 
 # ── 외부 호출 ──────────────────────────────────────────────────────────
 
+# OpenRouter 무료 모델은 계정 전체로 하루 횟수 한도가 있다(크레딧 10달러 미만이면 50회).
+# 다 쓰면 어느 무료 모델이든 즉시 429와 함께 이 표시를 준다. 이때는 폴백 모델도 같은 한도라 소용없다.
+DAILY_LIMIT_MARK = "free-models-per-day"
+
+
+def daily_limit_reset(headers, body: bytes):
+    """429가 하루 한도 때문이면 풀리는 시각(epoch ms, 모르면 None), 아니면 False."""
+    if DAILY_LIMIT_MARK not in body.decode("utf-8", "replace"):
+        return False
+    try:
+        reset = int((headers or {}).get("X-RateLimit-Reset", ""))
+    except (TypeError, ValueError):
+        return None
+    # 지금으로부터 2일 안쪽의 그럴듯한 값만 믿는다(초 단위로 오면 ms로 바꾼다).
+    if reset < 10**12:
+        reset *= 1000
+    now_ms = int(time.time() * 1000)
+    return reset if now_ms - 60_000 <= reset <= now_ms + 2 * 86_400_000 else None
+
+
 def post_chat(model: str, messages: list, timeout: float, extra: dict | None = None) -> dict:
     """OpenRouter 한 번 호출. 성공하면 응답 JSON(dict). 실패는 CallFailure.
     extra를 안 주면 MODEL_OPTIONS의 모델별 값을 쓴다."""
@@ -313,10 +335,13 @@ def post_chat(model: str, messages: list, timeout: float, extra: dict | None = N
     except urllib.error.HTTPError as exc:
         status = exc.code
         try:
-            exc.read(4096)  # 본문은 읽어서 버린다(로그·클라이언트로 내보내지 않는다)
+            err_body = exc.read(4096)  # 판정에만 쓰고 로그·클라이언트로 내보내지 않는다
         except Exception:
-            pass
+            err_body = b""
         if status == 429:
+            daily = daily_limit_reset(exc.headers, err_body)
+            if daily is not False:
+                raise CallFailure("daily_limit", f"HTTP 429 하루 한도 ({model})", reset_at=daily)
             raise CallFailure("rate_limit", f"HTTP 429 ({model})")
         if status in (408, 504):
             raise CallFailure("timeout", f"HTTP {status} ({model})")
@@ -343,6 +368,8 @@ def post_chat(model: str, messages: list, timeout: float, extra: dict | None = N
     if isinstance(data.get("error"), dict):
         code = data["error"].get("code")
         if code == 429:
+            if DAILY_LIMIT_MARK in json.dumps(data["error"]):
+                raise CallFailure("daily_limit", f"본문 오류 429 하루 한도 ({model})")
             raise CallFailure("rate_limit", f"본문 오류 429 ({model})")
         if isinstance(code, int) and code >= 500:
             raise CallFailure("server", f"본문 오류 {code} ({model})")
@@ -398,6 +425,7 @@ def analyze(text: str, *, log=None) -> dict:
 
     재시도 규칙(MAX_CALLS회·TOTAL_BUDGET_S초 안에서만):
       - 429·5xx·타임아웃·연결 실패 → 폴백 모델로 한 번 넘어간다. 폴백도 그러면 끝.
+      - 429인데 무료 모델 하루 한도(free-models-per-day) → 폴백 없이 바로 DAILY_LIMIT.
       - 응답 해석·검증 실패 → 같은 모델로 한 번만 다시. 또 실패하면 BAD_OUTPUT.
       - 그 밖의 4xx(인증·잘못된 요청 등) → 바로 UPSTREAM. 다시 불러도 같다.
     위기 키워드에 걸린 입력은 위 실패가 나도 AnalyzeError 대신 CRISIS_FALLBACK을 돌려준다.
@@ -440,6 +468,9 @@ def _analyze_with_model(text: str, log) -> dict:
             log(f"모델 실패 [{exc.kind}] {exc.log} {time.monotonic() - t0:.1f}s")
             if exc.kind == "no_key":
                 raise AnalyzeError("NO_KEY", exc.log)
+            if exc.kind == "daily_limit":
+                # 계정 전체 한도라 폴백 모델을 불러도 같은 429다 — 바로 끝낸다.
+                raise AnalyzeError("DAILY_LIMIT", exc.log, reset_at=exc.reset_at)
             if exc.kind in ("rate_limit", "server", "timeout") and model_idx + 1 < len(MODELS):
                 model_idx += 1
                 continue

@@ -28,7 +28,7 @@ python3 -B config.py     키 진단
 
 `POST /api/analyze` `{"text": "..."}` → 200 `{"emotion", "intensity", "message", "crisis"}`
 - `emotion`: `기쁨`·`설렘`·`평온`·`슬픔`·`불안`·`분노`·`지침`·`외로움` 중 하나(목록 밖이면 동의어 표로 매핑, 없으면 `평온`). `intensity`: 1~5. `message`: 존댓말 2~4문장, 300자 이내.
-- 실패 `{"error":{"code","message"}}`: `BAD_REQUEST`(400·413·415), `TOO_LONG`(400), `NO_KEY`(500), `RATE_LIMIT`(429), `TIMEOUT`(504), `UPSTREAM`(502), `BAD_OUTPUT`(502). 계약 밖으로 `FORBIDDEN_HOST`(403)·`NOT_FOUND`(404)·`METHOD_NOT_ALLOWED`(405)·`INTERNAL`(500).
+- 실패 `{"error":{"code","message"}}`: `BAD_REQUEST`(400·413·415), `TOO_LONG`(400), `NO_KEY`(500), `RATE_LIMIT`(429), `DAILY_LIMIT`(429, `reset_at` = 한도가 풀리는 epoch ms를 함께 줄 수 있음), `TIMEOUT`(504), `UPSTREAM`(502), `BAD_OUTPUT`(502). 계약 밖으로 `FORBIDDEN_HOST`(403)·`NOT_FOUND`(404)·`METHOD_NOT_ALLOWED`(405)·`INTERNAL`(500).
 
 ### 모델 — 무료(`:free`)만 쓴다 (사용자 결정, 2026-11-13)
 
@@ -36,7 +36,7 @@ python3 -B config.py     키 진단
 
 - 1순위 `baidu/ernie-5.5-flash-preview:free`(한국어가 가장 자연스러움, 응답 중앙값 약 3초), 폴백 `nvidia/nemotron-3.5-lightning:free`(다른 공급자). gemma-4는 공유 한도 429로, inkling은 403으로 제외. 비교는 `tools/compare_models.py`(`--list`는 호출 없이 목록만).
 - ernie는 추론을 끌 수 없어(끄면 400) 추론 글만 빼고 `MAX_TOKENS` 2000(1200에선 200자 입력이 `length`로 잘림). nemotron은 추론을 켜면 content가 비므로 끈다. 모델별 옵션은 `MODEL_OPTIONS`.
-- 재시도: 총 예산 40초, 한 번 25초, 최대 3회. 429·5xx·타임아웃 → 폴백 모델, 해석 실패 → 같은 모델로 한 번 더, 그 밖의 4xx → 바로 `UPSTREAM`.
+- 재시도: 총 예산 40초, 한 번 25초, 최대 3회. 429가 하루 한도(`free-models-per-day`)면 폴백 없이 바로 `DAILY_LIMIT`(계정 전체 한도라 폴백도 같은 429), 그 밖의 429·5xx·타임아웃 → 폴백 모델, 해석 실패 → 같은 모델로 한 번 더, 그 밖의 4xx → 바로 `UPSTREAM`.
 - **1순위가 preview 모델이라 사라지거나 유료로 바뀔 수 있다.** **무료 모델은 계정 전체로 하루 50회 한도다**(`free-models-per-day`, 응답 헤더 `X-RateLimit-Limit: 50`, 매일 09:00 KST 초기화. OpenRouter에 크레딧을 10달러 이상 충전한 계정은 1000회). 다 쓰면 두 모델 모두 즉시 429를 준다 — 개발·시험 중 실제 호출도 이 한도에서 빠진다(2026-11-13 하루에 소진).
 
 ### 위기(crisis) 처리 — 가장 조심할 곳
@@ -49,7 +49,7 @@ python3 -B config.py     키 진단
 
 ```
 tools/check_api.py                       API 계약·오류 매핑·위기 폴백·키워드 표 (가짜 업스트림, 모델 0회)
-tools/check_frontend.py --out DIR        화면 60항목 (tools/mock_server.py, 모델 0회)
+tools/check_frontend.py --out DIR        화면 61항목 (tools/mock_server.py, 모델 0회)
 tools/check_e2e.py --out DIR             실제 server.py + 실제 화면 + 가짜 업스트림 33항목 (모델 0회)
 tools/check_e2e.py --live --out DIR      run.sh 실제 실행, 실제 모델 호출, 키 누출·Ctrl+C 종료 확인 (8020이 비어 있어야 함)
 tools/check_live_inputs.py [--only 1,5]  실제 입력 19종 (모델 호출, 횟수 집계)
@@ -60,6 +60,7 @@ tools/check_live_inputs.py [--only 1,5]  실제 입력 19종 (모델 호출, 횟
 ### 작업 로그
 
 - **2026-11-13** — 서브에이전트로 구현. backend-developer(server·llm·run.sh)와 frontend-developer(화면 3파일, 가짜 서버로 확인)가 위 계약을 공유해 동시에 만들고, quality-assurance-engineer가 처음으로 합쳐 시험하며 8건을 고쳤다(이번에 한해 앱 코드 수정 권한을 줌): 위기 입력+모델 실패 시 상담 번호 미표시(→ 고정 응답), "살아야 할 이유를 모르겠다" 같은 간접 표현 미탐, 키워드 미탐 6·오탐 7, 클라이언트 끊김 시 트레이스백, 서로게이트 입력이 모델까지 감, 200자 입력 `length` 재시도(10.7초→3.8초), run.sh 종료 신호 처리, 대기 안내 문구를 실측에 맞춤. 실제 모델 호출은 백엔드 36회 + QA 28회, 모두 무료.
+- **2026-11-16** — 하루 한도를 다 쓰면 "1분쯤 뒤에"라고 잘못 안내하던 것을 고쳤다: `DAILY_LIMIT` 코드를 새로 두고 화면에 "내일 오전 9시부터 다시 답장해 드릴게요"처럼 풀리는 시각을 보여준다(위기 입력은 여전히 고정 위기 응답). 배경 빛 번짐이 body 높이마다 반복돼 짧은 페이지에서 띠가 생기던 것을 `min-height: 100vh` + `background-attachment: fixed`로 고쳤다 — 이 때문에 전체 페이지 캡처(`captureBeyondViewport`)에서는 첫 화면 아래가 민무늬로 찍히지만 실제 화면에서는 스크롤해도 이어진다(뷰포트 캡처로 확인).
 - 남은 확인: 실제 한글 IME로 조합 중 엔터, Firefox.
 
 ### 서브에이전트 (`.claude/agents/`) — 모두 커밋은 하지 않는다

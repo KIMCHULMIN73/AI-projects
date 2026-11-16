@@ -10,7 +10,7 @@ POST /api/analyze 는 입력 글에 든 낱말로 응답을 고른다(여러 개
   감정 이름(기쁨·설렘·평온·슬픔·불안·분노·지침·외로움)  그 감정으로 성공. 없으면 평온
   세기N (N=1~5)                                          intensity를 N으로
   위기                                                   crisis: true
-  오류:CODE  (BAD_REQUEST·TOO_LONG·NO_KEY·RATE_LIMIT·TIMEOUT·UPSTREAM·BAD_OUTPUT)  그 오류로 실패
+  오류:CODE  (BAD_REQUEST·TOO_LONG·NO_KEY·RATE_LIMIT·DAILY_LIMIT·TIMEOUT·UPSTREAM·BAD_OUTPUT)  그 오류로 실패
   느림 / 느림:N                                          5초(또는 N초) 늦게 응답
   비JSON                                                 502 + HTML 본문
   빈성공                                                 200 + {} (모양이 틀린 성공)
@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STATIC = {"/": "index.html", "/index.html": "index.html", "/style.css": "style.css", "/app.js": "app.js"}
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8"}
 EMOTIONS = ["기쁨", "설렘", "평온", "슬픔", "불안", "분노", "지침", "외로움"]
-ERRORS = {"BAD_REQUEST": 400, "TOO_LONG": 400, "NO_KEY": 500, "RATE_LIMIT": 429,
+ERRORS = {"BAD_REQUEST": 400, "TOO_LONG": 400, "NO_KEY": 500, "RATE_LIMIT": 429, "DAILY_LIMIT": 429,
           "TIMEOUT": 504, "UPSTREAM": 502, "BAD_OUTPUT": 502}
 MESSAGES = {
     "기쁨": "그 순간이 얼마나 반가웠을지 느껴져요. 오늘의 웃음을 오래 기억해 두셨으면 해요.",
@@ -66,7 +66,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send(status, json.dumps(obj, ensure_ascii=False).encode(), "application/json; charset=utf-8")
 
     def error(self, code: str, status: int | None = None) -> None:
-        self.send_json(status or ERRORS[code], {"error": {"code": code, "message": f"mock {code}"}})
+        error = {"code": code, "message": f"mock {code}"}
+        if code == "DAILY_LIMIT":  # 서버처럼 한도가 풀리는 시각을 함께 준다: 다음 날 오전 9시(로컬)
+            t = time.localtime(time.time() + 86400)
+            error["reset_at"] = int(time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 9, 0, 0, 0, 0, -1)) * 1000)
+        self.send_json(status or ERRORS[code], {"error": error})
 
     def do_GET(self):
         path = self.path.split("?", 1)[0]
