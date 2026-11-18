@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>추출한 텍스트 보기 — 한눈 PDF 요약</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="viewer.css">
+  <script type="module" src="viewer.js"></script>
+</head>
+<body>
+  <!-- viewer.js가 뜨지 못하면(파일을 직접 열었을 때 등) 잠시 뒤 이 안내만 보인다. -->
+  <div class="boot-notice" id="boot-notice" role="status">
+    <p class="boot-notice__title">서버를 먼저 실행해 주세요</p>
+    <p>
+      이 파일을 직접 열면 추출한 텍스트를 볼 수 없어요.
+      터미널에서 이 폴더로 이동해 <code>./run.sh</code>를 실행한 뒤
+      브라우저에서 <code>http://127.0.0.1:8030/</code> 으로 열고, 문서를 올린 다음 [추출한 텍스트 보기]를 누르세요.
+    </p>
+  </div>
+
+  <a class="skip" href="#pages">본문으로 건너뛰기</a>
+
+  <header class="vhead">
+    <div class="vhead__titles">
+      <p class="vhead__eyebrow">한눈 PDF 요약 · 추출한 텍스트 보기</p>
+      <h1 class="vhead__title" id="doc-title">문서를 받는 중…</h1>
+    </div>
+    <p class="vhead__progress" id="progress-text"></p>
+  </header>
+
+  <!-- 도구 막대: 넓은 화면에서는 위에 붙어 따라온다 -->
+  <div class="vbar" id="vbar" hidden>
+    <div class="vbar__tools">
+      <div class="seg" role="group" aria-label="보기 방식">
+        <button class="vbtn seg__btn" id="mode-original" type="button" data-action="mode" data-mode="original" aria-pressed="true">원본 배치</button>
+        <button class="vbtn seg__btn" id="mode-reading" type="button" data-action="mode" data-mode="reading" aria-pressed="false">읽기 모드</button>
+      </div>
+      <button class="vbtn vbtn--toc" id="toc-toggle" type="button" data-action="toc" aria-expanded="false" aria-controls="toc">목차</button>
+      <div class="pager" role="group" aria-label="쪽 이동">
+        <button class="vbtn vbtn--icon" id="prev-page" type="button" data-action="prev" aria-label="이전 쪽">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <label class="pager__label" for="page-input">쪽</label>
+        <input class="pager__input" id="page-input" type="number" inputmode="numeric" min="1" value="1" aria-describedby="page-total page-help">
+        <span class="pager__total" id="page-total">/ 1</span>
+        <button class="vbtn vbtn--icon" id="next-page" type="button" data-action="next" aria-label="다음 쪽">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" focusable="false"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <span class="visually-hidden" id="page-help">쪽 번호를 쓰고 Enter를 누르면 그 쪽으로 가요.</span>
+      </div>
+      <button class="vbtn" id="print-button" type="button" data-action="print" aria-disabled="true"
+              title="모두 불러온 뒤 인쇄할 수 있어요" aria-describedby="print-hint">인쇄</button>
+      <button class="vbtn vbtn--primary" id="download-button" type="button" data-action="download"
+              aria-describedby="download-status">추출한 텍스트 다운로드하기</button>
+    </div>
+    <div class="vbar__notes">
+      <p class="vbar__help" id="mode-help"></p>
+      <p class="vbar__help" id="print-hint">인쇄는 모두 불러온 뒤 할 수 있어요.</p>
+      <p class="vbar__status" id="download-status" aria-live="polite"></p>
+      <div class="vbar__error" id="download-error" role="alert" hidden></div>
+    </div>
+  </div>
+
+  <!-- 화면 읽기 프로그램용: 불러오기 시작·완료만 알린다(5쪽마다 알리지 않는다) -->
+  <p class="visually-hidden" id="announcer" aria-live="polite" aria-atomic="true"></p>
+
+  <div class="vlayout" id="layout">
+    <nav class="toc" id="toc" aria-labelledby="toc-title" hidden>
+      <h2 class="toc__title" id="toc-title">목차</h2>
+      <p class="toc__empty" id="toc-empty" hidden>목차가 없는 문서예요.</p>
+      <ol class="toc__list" id="toc-list"></ol>
+    </nav>
+
+    <main class="pages" id="pages" tabindex="-1">
+      <!-- 문서를 받기 전·받지 못했을 때의 안내 -->
+      <section class="state-card" id="state-card" aria-labelledby="state-title">
+        <span class="spinner" id="state-spinner" aria-hidden="true"></span>
+        <h2 class="state-card__title" id="state-title">원래 창에서 문서를 받고 있어요…</h2>
+        <div class="state-card__text" id="state-text"></div>
+        <div class="state-card__actions">
+          <button class="vbtn vbtn--primary" id="reconnect-button" type="button" data-action="reconnect" hidden>다시 연결</button>
+          <button class="vbtn vbtn--primary" id="restart-button" type="button" data-action="restart" hidden>다시 시도</button>
+        </div>
+      </section>
+      <div class="pages__list" id="page-list"></div>
+    </main>
+  </div>
+</body>
+</html>

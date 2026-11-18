@@ -1,0 +1,402 @@
+/* 한눈 PDF 요약 — 추출한 텍스트 보기 창 (SPEC §10.8)
+   웹폰트·이미지 파일 없이 CSS만. CSP style-src 'self' — 인라인 style 속성은 쓰지 않고,
+   쪽·줄 위치처럼 문서마다 다른 값은 viewer.js가 CSSOM(element.style)으로 넣는다.
+   글자색은 모두 바로 뒤 배경과 WCAG AA(4.5:1) 이상. */
+
+:root {
+  --bg: #e9edf3;
+  --card: #ffffff;
+  --ink: #17202e;
+  --ink-soft: #475467;        /* 흰 바탕 7.4:1, --bg 위 6.3:1 */
+  --border: #cbd3df;
+  --accent: #1d4ed8;          /* 흰 글자 6.7:1 */
+  --accent-hover: #1e40af;
+  --accent-tint: #eef2ff;
+  --focus: #1d4ed8;
+  --warn-bg: #fff7e6;
+  --warn-ink: #6b4100;
+  --error-bg: #fdeeee;
+  --error-line: #efb4b0;
+  --error-ink: #8f1b1b;
+  --radius: 12px;
+  --bar-h: 0px;               /* viewer.js가 도구 막대 높이로 바꾼다(넓은 화면에서 붙어 따라올 때) */
+  --font: system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", "Noto Sans CJK KR",
+          "Malgun Gothic", "맑은 고딕", "Nanum Gothic", sans-serif;
+  color-scheme: light;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; background: var(--bg); }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flow-root;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 1rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+h1, h2, h3, h4, p, figure, ol { margin: 0; }
+
+code {
+  font-family: ui-monospace, "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  font-size: .9em;
+  background: rgba(23, 32, 46, .07);
+  border-radius: 5px;
+  padding: .05em .35em;
+  word-break: normal;
+}
+
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
+.skip {
+  position: absolute;
+  left: .5rem; top: -4rem;
+  z-index: 20;
+  padding: .7rem 1rem;
+  background: var(--card);
+  color: var(--accent);
+  font-weight: 700;
+  border-radius: 8px;
+}
+.skip:focus { top: .5rem; }
+
+/* ── 파일로 직접 열었을 때 ─────────────────────────────── */
+.boot-notice {
+  width: calc(100% - 2rem);
+  max-width: 40rem;
+  margin: 2rem auto 0;
+  padding: 1.1rem 1.3rem;
+  background: var(--card);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  visibility: hidden;
+  animation: boot-reveal 0s linear 1.2s forwards;
+}
+.boot-notice p + p { margin-top: .4rem; }
+.boot-notice__title { font-weight: 700; font-size: 1.15rem; }
+.boot-notice.is-shown { visibility: visible; animation: none; }
+@keyframes boot-reveal { to { visibility: visible; } }
+.app-ready .boot-notice { display: none; }
+html:not(.app-ready) .vhead,
+html:not(.app-ready) .vbar,
+html:not(.app-ready) .vlayout,
+html:not(.app-ready) .skip { display: none; }
+
+/* ── 머리말 ─────────────────────────────────────────── */
+.vhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: .25rem 1rem;
+  padding: 1rem 1.25rem .6rem;
+  background: var(--card);
+}
+.vhead__titles { min-width: 0; }
+.vhead__eyebrow { color: var(--ink-soft); font-size: .88rem; font-weight: 700; }
+.vhead__title { font-size: 1.35rem; line-height: 1.35; }
+.vhead__progress { color: var(--ink-soft); font-size: .95rem; font-variant-numeric: tabular-nums; }
+
+/* ── 도구 막대 ──────────────────────────────────────── */
+.vbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: .5rem 1.25rem .55rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(15, 30, 60, .06);
+}
+.vbar__tools { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; }
+.vbar__notes { margin-top: .35rem; font-size: .88rem; }
+.vbar__help { color: var(--ink-soft); }
+.vbar__status { font-weight: 700; color: #166534; font-variant-numeric: tabular-nums; }
+.vbar__status:empty { display: none; }
+.vbar__status.is-busy { color: var(--ink); }
+.vbar__error {
+  margin-top: .35rem;
+  padding: .5rem .8rem;
+  border-radius: 8px;
+  background: var(--error-bg);
+  border-left: 4px solid var(--error-line);
+  color: var(--error-ink);
+}
+
+.vbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .3rem;
+  min-height: 44px;
+  min-width: 44px;
+  padding: .45rem .95rem;
+  border-radius: 9px;
+  border: 2px solid var(--accent);
+  background: var(--card);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.25;
+  cursor: pointer;
+}
+.vbtn:hover { background: var(--accent-tint); }
+.vbtn--primary { background: var(--accent); color: #fff; }
+.vbtn--primary:hover { background: var(--accent-hover); }
+.vbtn--icon { padding: .3rem; }
+.vbtn:disabled,
+.vbtn[aria-disabled="true"] { cursor: not-allowed; background: #e4e8ef; color: #475467; border-color: #c3cad6; }
+
+.seg { display: inline-flex; }
+.seg__btn { border-radius: 0; }
+.seg__btn:first-child { border-radius: 9px 0 0 9px; }
+.seg__btn:last-child { border-radius: 0 9px 9px 0; margin-left: -2px; }
+.seg__btn[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.seg__btn:focus-visible { position: relative; z-index: 1; }
+
+.pager { display: inline-flex; align-items: center; gap: .35rem; }
+.pager__label { font-weight: 700; }
+.pager__input {
+  width: 4.6rem;
+  min-height: 44px;
+  padding: .3rem .5rem;
+  border: 2px solid #7a8699;
+  border-radius: 8px;
+  font: inherit;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  background: var(--card);
+  color: var(--ink);
+}
+.pager__total { font-variant-numeric: tabular-nums; color: var(--ink-soft); white-space: nowrap; }
+
+/* ── 목차 + 쪽들 ─────────────────────────────────────── */
+.vlayout { display: block; }
+.toc {
+  margin: .75rem 1.25rem 0;
+  padding: .8rem 1rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.toc__title { font-size: 1rem; margin-bottom: .35rem; }
+.toc__empty { color: var(--ink-soft); font-size: .95rem; }
+.toc__list, .toc__list ol { list-style: none; margin: 0; padding: 0; }
+.toc__list ol { padding-left: .9rem; border-left: 1px solid var(--border); margin-left: .4rem; }
+.toc__list a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: .2rem .5rem;
+  border-radius: 7px;
+  color: var(--ink);
+  text-decoration: none;
+  line-height: 1.35;
+  font-size: .95rem;
+}
+.toc__list a:hover { background: var(--accent-tint); text-decoration: underline; }
+.toc__list a[aria-current="true"] {
+  background: var(--accent-tint);
+  color: var(--accent-hover);
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.toc__page { margin-left: auto; padding-left: .6rem; color: var(--ink-soft); font-size: .85rem; font-weight: 400; white-space: nowrap; }
+
+.pages { display: block; padding: 1rem 1.25rem 3rem; min-width: 0; outline: none; }
+.pages__list { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+
+/* 안내 카드(받는 중·받지 못함·첫 묶음 오류) */
+.state-card {
+  max-width: 36rem;
+  margin: 2rem auto;
+  padding: 1.4rem 1.5rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+}
+.state-card__title { font-size: 1.2rem; line-height: 1.45; margin-top: .6rem; }
+.state-card__text { margin-top: .5rem; }
+.state-card__text p + p { margin-top: .35rem; }
+.state-card__actions { display: flex; justify-content: center; gap: .6rem; margin-top: 1rem; }
+.state-card.is-error .state-card__title { color: var(--error-ink); }
+.spinner {
+  display: inline-block;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 4px solid var(--accent-tint);
+  border-top-color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 쪽 ─────────────────────────────────────────────── */
+.pg {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  scroll-margin-top: calc(var(--bar-h) + 12px);
+}
+.pg:focus { outline: none; }
+.pg:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
+.pg__no {
+  align-self: stretch;
+  max-width: inherit;
+  color: var(--ink-soft);
+  font-size: .88rem;
+  font-weight: 700;
+  margin-bottom: .35rem;
+  text-align: center;
+}
+.pg__note { margin-top: .4rem; color: var(--ink-soft); font-size: .88rem; }
+.pg__box { width: 100%; }   /* 최대 폭은 viewer.js가 쪽 크기(pt × 96/72 px)로 */
+
+/* 아직 안 불러온 쪽 자리 / 실패한 묶음 */
+.ph {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  padding: 1rem;
+  background: #dfe4ec;
+  border-radius: 4px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.ph.is-error { background: var(--error-bg); color: var(--error-ink); }
+
+/* 원본 배치: 흰 종이. 위치·크기는 쪽 폭 기준 컨테이너 단위(cqw)라 화면 폭에 맞춰 함께 줄어든다 */
+.paper {
+  position: relative;
+  width: 100%;
+  container-type: inline-size;
+  background: #fff;
+  color: #111;
+  box-shadow: 0 1px 3px rgba(15, 30, 60, .18), 0 8px 24px rgba(15, 30, 60, .10);
+  overflow: hidden;
+  line-height: 1.15;
+  font-family: var(--font);
+}
+.paper .blk { position: absolute; margin: 0; font-size: inherit; font-weight: 400; }
+.paper .ln {
+  position: absolute;
+  display: block;
+  white-space: pre;
+  transform-origin: 0 0;
+  line-height: 1.15;
+}
+.paper .ln.is-bold { font-weight: 700; }
+.paper .tblbox { position: absolute; }
+.paper table { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; line-height: 1.15; }
+/* 원본 배치의 열 폭은 PDF에서 잰 값이라 칸 글자를 한 줄로 둔다(줄바꿈하면 행이 늘어 아래 내용과 겹친다).
+   넘치는 글자는 칸 안에서 잘려 보이지만 DOM·복사·화면 낭독기에는 그대로 있고, 읽기 모드에서는 모두 보인다. */
+.paper th, .paper td { border: 1px solid #9aa3b0; padding: 0 .15em; text-align: left; vertical-align: middle; overflow: hidden; white-space: nowrap; }
+.paper th, .paper .is-bold, .flow .is-bold { font-weight: 700; }
+.paper figure { position: absolute; }
+.paper figure img { display: block; width: 100%; height: 100%; object-fit: fill; }
+.paper .omitted {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+  padding: .3em;
+  border: 1px dashed #7a8699;
+  background: #f1f3f7;
+  color: #3b4554;
+  text-align: center;
+}
+
+/* 읽기 모드: 위에서 아래로 */
+.flow {
+  width: 100%;
+  max-width: 46rem;
+  padding: 1.6rem 1.8rem;
+  background: var(--card);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(15, 30, 60, .12);
+  line-height: 1.75;
+  word-break: keep-all;
+}
+.flow > * + * { margin-top: .8rem; }
+.flow h2 { font-size: 1.55rem; line-height: 1.35; margin-top: 1.4rem; }
+.flow h3 { font-size: 1.28rem; line-height: 1.4; margin-top: 1.2rem; }
+.flow h4 { font-size: 1.08rem; line-height: 1.45; margin-top: 1rem; }
+.flow > :first-child { margin-top: 0; }
+.flow .tblscroll { max-width: 100%; overflow-x: auto; }
+.flow table { border-collapse: collapse; min-width: 50%; }
+.flow th, .flow td { border: 1px solid #9aa3b0; padding: .35rem .65rem; text-align: left; vertical-align: top; }
+.flow th { background: #eef1f6; }
+.flow figure img { display: block; max-width: 100%; height: auto; }
+.flow figcaption { margin-top: .3rem; color: var(--ink-soft); font-size: .92rem; }
+.flow .omitted { padding: .5rem .8rem; border: 1px dashed #7a8699; border-radius: 6px; color: #3b4554; background: #f6f7f9; }
+
+/* ── 넓은 화면: 도구 막대가 붙어 따라오고, 목차는 왼쪽 사이드바 ── */
+@media (min-width: 1000px) {
+  .vlayout { display: grid; grid-template-columns: 270px minmax(0, 1fr); align-items: start; }
+  .toc {
+    position: sticky;               /* 넓은 화면에서는 [목차] 단추와 상관없이 항상 보인다(viewer.js가 hidden을 푼다) */
+    top: calc(var(--bar-h) + .75rem);
+    max-height: calc(100vh - var(--bar-h) - 1.5rem);
+    overflow-y: auto;
+    margin: .75rem 0 .75rem 1rem;
+  }
+  .vbtn--toc { display: none; }
+}
+
+/* ── 좁은 화면 ──────────────────────────────────────── */
+@media (max-width: 699px) {
+  .vbar { position: static; box-shadow: none; }
+  .pg { scroll-margin-top: 12px; }
+}
+@media (max-width: 480px) {
+  .vhead { padding: .8rem .75rem .5rem; }
+  .vhead__title { font-size: 1.15rem; }
+  .vbar { padding: .5rem .75rem; }
+  /* 세 줄로: [원본 배치|읽기 모드] [목차] / [<] 쪽 [n] / N [>] [인쇄] / [다운로드] — 본문이 빨리 보이게 */
+  .vbar__tools { gap: .45rem; }
+  .vbtn { padding: .4rem .7rem; }
+  .seg { flex: 1 1 13rem; }
+  .seg__btn { flex: 1 1 0; }
+  .vbtn--toc, #print-button { flex: 0 0 auto; }
+  .pager { flex: 1 1 13rem; }
+  .pager__input { flex: 1 1 auto; width: auto; min-width: 3.2rem; }
+  #download-button { flex: 1 1 100%; }
+  .vbar__help { font-size: .82rem; }
+  .toc { margin: .6rem .75rem 0; }
+  .pages { padding: .75rem .5rem 2rem; }
+  .flow { padding: 1rem .9rem; }
+  .flow h2 { font-size: 1.3rem; }
+  .flow h3 { font-size: 1.15rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; border-color: var(--accent); border-right-color: var(--accent-tint); }
+  html { scroll-behavior: auto; }
+}
+
+/* ── 인쇄: 도구 막대·목차 숨김, 쪽마다 새 종이 ───────────── */
+@media print {
+  html, body { background: #fff; }
+  .vbar, .toc, .skip, .state-card, .vhead__progress, .vhead__eyebrow { display: none !important; }
+  .vhead { padding: 0 0 .5rem; }
+  .vlayout { display: block; }
+  .pages { padding: 0; }
+  .pages__list { display: block; }
+  .pg { display: block; break-before: page; page-break-before: always; }
+  .pg:first-child { break-before: auto; page-break-before: auto; }
+  .pg__box { max-width: none !important; }
+  .paper { box-shadow: none; }
+  .flow { box-shadow: none; max-width: none; padding: 0; }
+  .pg__no { text-align: left; }
+}

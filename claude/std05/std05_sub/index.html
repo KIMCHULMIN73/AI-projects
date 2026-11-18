@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>한눈 PDF 요약</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <!-- app.js가 뜨지 못하면(파일을 직접 열었을 때 등) 잠시 뒤 이 안내만 보인다. 정상 실행이면 app.js가 숨긴다. -->
+  <div class="boot-notice" id="boot-notice" role="status">
+    <p class="boot-notice__title">서버를 먼저 실행해 주세요</p>
+    <p>
+      이 파일을 직접 열면 PDF를 요약할 수 없어요.
+      터미널에서 이 폴더로 이동해 <code>./run.sh</code>를 실행한 뒤
+      브라우저에서 <code>http://127.0.0.1:8030/</code> 으로 여세요.
+    </p>
+  </div>
+
+  <header class="site-header">
+    <div class="site-header__inner">
+      <svg class="site-header__mark" viewBox="0 0 48 48" width="44" height="44" aria-hidden="true" focusable="false">
+        <path d="M12 5h17l9 9v27a3 3 0 0 1-3 3H12a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z" fill="#ffffff" stroke="#1d4ed8" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M29 5v7a2 2 0 0 0 2 2h7" fill="none" stroke="#1d4ed8" stroke-width="2.5" stroke-linejoin="round"/>
+        <path d="M15 22h17M15 28h17M15 34h10" stroke="#1d4ed8" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="34" cy="35" r="7" fill="#f59e0b"/>
+        <path d="M31 35l2.2 2.2L37.4 33" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <h1 class="site-title">한눈 PDF 요약</h1>
+        <p class="site-subtitle">PDF를 올리면 한 줄 요약과 핵심 요점을 한국어로 정리해 드려요.</p>
+      </div>
+    </div>
+  </header>
+
+  <main class="page" id="main">
+    <!-- 첫 로드 때 /api/health 결과로 미리 알리는 안내(도구 없음·키 없음·서버 연결 안 됨) -->
+    <div class="notices" id="health-notices"></div>
+
+    <!-- 화면 읽기 프로그램용 진행·결과 알림. 1초마다 바뀌는 경과 시간은 여기에 넣지 않는다. -->
+    <p class="visually-hidden" id="announcer" aria-live="polite" aria-atomic="true"></p>
+
+    <section class="card upload" id="upload" aria-labelledby="upload-title">
+      <h2 class="visually-hidden" id="upload-title">PDF 올리기</h2>
+      <div class="drop" id="drop-zone" data-action="pick">
+        <svg class="drop__icon" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true" focusable="false">
+          <path d="M12 5h17l9 9v27a3 3 0 0 1-3 3H12a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z" fill="#eef2ff" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M29 5v7a2 2 0 0 0 2 2h7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+          <path d="M24 36V22m-6 6l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="drop__title" id="drop-title">PDF를 여기에 끌어다 놓거나 눌러서 고르세요</p>
+        <p class="drop__hint" id="drop-hint">20MB · 300쪽까지, 한 번에 파일 하나</p>
+        <p class="drop__over" aria-hidden="true">놓으면 바로 읽기 시작해요</p>
+        <button class="btn btn--primary drop__button" id="pick-button" type="button" data-action="pick"
+                aria-describedby="drop-hint">PDF 파일 고르기</button>
+      </div>
+      <!-- 영역 밖에 둔다: input.click()이 영역의 클릭 처리로 다시 올라가지 않게 -->
+      <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
+    </section>
+
+    <section class="card doc" id="doc" hidden aria-labelledby="doc-title">
+      <p class="doc__eyebrow">읽은 문서</p>
+      <h2 class="doc__title" id="doc-title"></h2>
+      <dl class="doc__facts">
+        <div class="doc__fact"><dt>쪽수</dt><dd id="doc-pages"></dd></div>
+        <div class="doc__fact"><dt>글자 수</dt><dd id="doc-chars"></dd></div>
+        <div class="doc__fact"><dt>파일 크기</dt><dd id="doc-size"></dd></div>
+      </dl>
+      <p class="doc__file" id="doc-file" hidden></p>
+      <p class="note note--warn" id="doc-truncated" hidden></p>
+      <p class="note" id="doc-empty-pages" hidden></p>
+      <p class="note" id="doc-stopped" hidden>요약을 멈췄어요. 다시 요약하려면 [요약하기]를 눌러 주세요.</p>
+      <!-- 추출한 텍스트 보기·내려받기(SPEC §10.7). 요약 흐름과 따로 움직이고, 오류도 여기에만 보인다. -->
+      <div class="doc-tools" id="doc-tools">
+        <div class="doc-tools__buttons">
+          <button class="btn btn--ghost" id="view-text-button" type="button" data-action="view-text"
+                  aria-describedby="doc-tools-status">추출한 텍스트 보기</button>
+          <button class="btn btn--ghost" id="download-text-button" type="button" data-action="download-text"
+                  aria-describedby="doc-tools-status">추출한 텍스트 다운로드하기</button>
+        </div>
+        <p class="doc-tools__status" id="doc-tools-status" aria-live="polite"></p>
+        <div class="doc-tools__error" id="doc-tools-error" role="alert" hidden></div>
+      </div>
+      <div class="actions" id="doc-actions">
+        <button class="btn btn--primary" id="summarize-button" type="button" data-action="summarize">요약하기</button>
+        <button class="btn btn--ghost" type="button" data-action="another">다른 파일 고르기</button>
+      </div>
+    </section>
+
+    <section class="card progress" id="progress" hidden aria-labelledby="progress-title">
+      <div class="progress__head">
+        <span class="spinner" aria-hidden="true"></span>
+        <div class="progress__texts">
+          <h2 class="progress__title" id="progress-title"></h2>
+          <p class="progress__file" id="progress-file"></p>
+        </div>
+      </div>
+      <div class="bar" aria-hidden="true"><span class="bar__fill"></span></div>
+      <p class="progress__phrase" id="progress-phrase"></p>
+      <p class="progress__hint" id="progress-hint" hidden></p>
+      <div class="actions">
+        <button class="btn btn--ghost" id="cancel-button" type="button" data-action="cancel">취소</button>
+      </div>
+    </section>
+
+    <section class="card notice notice--error" id="error" hidden aria-labelledby="error-title">
+      <h2 class="notice__title" id="error-title"></h2>
+      <div class="notice__text" id="error-text" role="alert"></div>
+      <div class="actions">
+        <button class="btn btn--primary" id="retry-button" type="button" data-action="retry" hidden>다시 시도</button>
+        <button class="btn btn--ghost" id="another-button" type="button" data-action="another">다른 파일 고르기</button>
+      </div>
+    </section>
+
+    <section class="card result" id="result" hidden aria-labelledby="result-one-title">
+      <h2 class="result__label" id="result-one-title" tabindex="-1">한 줄 요약</h2>
+      <p class="result__one" id="result-one"></p>
+
+      <h2 class="result__label" id="result-overview-title">요약</h2>
+      <p class="result__overview" id="result-overview"></p>
+
+      <h2 class="result__label" id="result-points-title">핵심 요점</h2>
+      <ul class="result__points" id="result-points" aria-labelledby="result-points-title"></ul>
+
+      <p class="note note--warn" id="result-truncated" hidden></p>
+      <p class="result__meta" id="result-meta"></p>
+
+      <div class="actions">
+        <button class="btn btn--primary" id="copy-button" type="button" data-action="copy">결과 복사</button>
+        <button class="btn btn--ghost" type="button" data-action="another">다른 파일 고르기</button>
+      </div>
+      <p class="result__copied" id="copy-status" aria-live="polite"></p>
+    </section>
+
+    <aside class="privacy" id="privacy" aria-labelledby="privacy-title">
+      <h2 class="privacy__title" id="privacy-title">문서는 어디로 가나요?</h2>
+      <p>
+        [요약하기]를 누르면 문서 내용이 OpenRouter와 AI 모델 제공사로 전송됩니다.
+        무료 모델은 제공사가 입력을 기록하거나 학습에 쓸 수 있으니 민감한 문서는 올리지 마세요.
+        파일을 올려 글자를 읽는 단계까지는 이 컴퓨터 안에서만 처리돼요.
+      </p>
+    </aside>
+  </main>
+
+  <footer class="site-footer">
+    <p>요약은 AI가 만든 글이라 틀리거나 빠진 내용이 있을 수 있어요. 중요한 내용은 원문을 확인해 주세요.</p>
+  </footer>
+</body>
+</html>
