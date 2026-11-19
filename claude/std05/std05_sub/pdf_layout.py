@@ -20,6 +20,7 @@
 - 내려받을 HTML은 문서에서 온 모든 문자열을 `html.escape`하고 스크립트가 없으며 CSP 메타로 스크립트·외부 요청을 막는다.
 
 예외는 `pdf_extract.ExtractError`(와 그 하위 `LayoutError`)뿐이다. 쪽 범위가 틀리면 code `BAD_RANGE`(서버가 400 BAD_REQUEST로).
+`should_stop`(인자 없는 함수)을 주면 쪽·그림마다 불러 참이면 code `CLIENT_GONE`으로 멈춘다(서버가 요청자가 떠났는지 알려 준다).
 계약: SPEC.md §10.2(수치)·§10.4(JSON)·§10.5(처리 순서)·§10.6(HTML).
 """
 
@@ -66,6 +67,7 @@ TABLE_ALIGN_PT = 4.0             # 열 정렬 허용 오차
 TABLE_MAX_CELL_CHARS = 40        # 셀 글자 평균이 이보다 크면 2단 본문
 TABLE_MAX_CELL_WORDS = 6         # 셀 단어 평균이 이보다 크면 2단 본문(한국어는 한 단 한 줄이 20자 안팎이라 글자 수만으로는 못 가른다)
 TABLE_PARA_SHARE = 0.5           # 표 후보 줄의 이 비율 이상이 3줄 이상 문단 블록에서 왔으면 2단 본문
+_CAPTION_RE = re.compile(r"(?:figure|fig\.|table|그림|표|사진)(?:\s|\d|\Z)", re.I)   # 그림 설명 머리("Figure 1-2")
 
 TOOLS = ("pdftotext", "pdfinfo", "pdftohtml", "pdftoppm")
 TITLE_MAX = 200
@@ -79,7 +81,7 @@ _EDGE_RE = re.compile(r"^[\s.]+|[\s.]+$")
 
 
 class LayoutError(ExtractError):
-    """ExtractError에 `BAD_RANGE`(쪽 범위 잘못)만 더한 것. isinstance(e, ExtractError)는 참."""
+    """ExtractError에 `BAD_RANGE`(쪽 범위 잘못)·`CLIENT_GONE`(요청자가 떠남)을 더한 것. isinstance(e, ExtractError)는 참."""
 
     def __init__(self, code: str, log: str = ""):
         super().__init__(code, log)
@@ -699,7 +701,11 @@ def _aligned(vals: list[float]) -> bool:
 
 
 def _tables(bp: BPage, lines: list[Line]) -> list[tuple[list[Line], dict]]:
-    """한 쪽의 줄에서 표를 찾는다 → [(표가 된 줄들, table 블록 dict(좌표·rows·cols·size))]."""
+    """한 쪽의 줄에서 표를 찾는다 → [(표가 된 줄들, table 블록 dict(좌표·rows·cols·size))].
+
+    칸이 2개 이상인 행(기준 행)이 이어지면 표 후보다. 그 사이·뒤에 칸이 하나뿐이고 첫 열이 비어 있는(둘째 열 이후에서
+    시작하는) 줄은 바로 위 행의 셀이 여러 줄로 이어진 것으로 보고 같은 행에 붙인다(4단계 QA — 실제 문서의 여러 줄 셀).
+    """
     if len(lines) < 2:
         return []
     # 세로로 겹치는 줄을 한 행으로(서로 다른 bbox 블록이라도)
@@ -717,6 +723,24 @@ def _tables(bp: BPage, lines: list[Line]) -> list[tuple[list[Line], dict]]:
     for r in rows:
         words = sorted((w for ln in r["lines"] for w in ln.words), key=lambda w: w.x0)
         r["cells"] = _cells(words, r["h"])
+        r["cont"] = False
+
+    def extend(i: int, allow_cont: bool) -> int:
+        starts = [c[0].x0 for c in rows[i]["cells"][1:]]
+        j = i + 1
+        while j < len(rows):
+            r, prev = rows[j], rows[j - 1]
+            r["cont"] = False
+            if r["y0"] - prev["y1"] > TABLE_ROW_GAP_RATIO * max(prev["h"], r["h"]):
+                break
+            if len(r["cells"]) >= 2:
+                starts += [c[0].x0 for c in r["cells"][1:]]
+            elif allow_cont and r["cells"] and r["cells"][0][0].x0 >= min(starts) - TABLE_ALIGN_PT:
+                r["cont"] = True         # 첫 열이 빈 한 칸 줄: 위 행 셀의 다음 줄
+            else:
+                break
+            j += 1
+        return j
 
     found = []
     i = 0
@@ -724,27 +748,41 @@ def _tables(bp: BPage, lines: list[Line]) -> list[tuple[list[Line], dict]]:
         if len(rows[i]["cells"]) < 2:
             i += 1
             continue
-        j = i + 1
-        while (j < len(rows) and len(rows[j]["cells"]) >= 2
-               and rows[j]["y0"] - rows[j - 1]["y1"] <= TABLE_ROW_GAP_RATIO * max(rows[j - 1]["h"], rows[j]["h"])):
-            j += 1
+        rows[i]["cont"] = False
+        j = extend(i, True)
         group = rows[i:j]
-        tbl = _table_from_rows(bp, group) if len(group) >= 2 else None
+        tbl = _table_from_rows(bp, group) if sum(1 for r in group if not r["cont"]) >= 2 else None
+        if tbl is None and any(r["cont"] for r in group):
+            # 이어진 줄을 붙여서는 표가 아니면 예전 규칙(칸 2개 이상인 행만 이어짐)으로 다시
+            j = extend(i, False)
+            group = rows[i:j]
+            tbl = _table_from_rows(bp, group) if len(group) >= 2 else None
         if tbl is not None:
             found.append(tbl)
         i = j
     return found
 
 
-def _table_from_rows(bp: BPage, group: list[dict]) -> tuple[list[Line], dict] | None:
-    # 칸 상자를 x축에 투영해 겹치는 것끼리 묶으면 열이 된다
-    spans = sorted((c[0].x0, c[-1].x1) for r in group for c in r["cells"])
+def _project(rows: list[dict]) -> list[list[float]]:
+    """칸 상자를 x축에 투영해 겹치는 것끼리 묶으면 열이 된다."""
+    spans = sorted((c[0].x0, c[-1].x1) for r in rows for c in r["cells"])
     cols: list[list[float]] = []
     for x0, x1 in spans:
         if cols and x0 < cols[-1][1] + 1:
             cols[-1][1] = max(cols[-1][1], x1)
         else:
             cols.append([x0, x1])
+    return cols
+
+
+def _table_from_rows(bp: BPage, group: list[dict]) -> tuple[list[Line], dict] | None:
+    anchors = [r for r in group if not r["cont"]]
+    cols = _project(anchors)
+    if len(anchors) >= 3:
+        # 머리글이 아래 열과 어긋나 두 열에 걸치면(실제 문서 xz의 Preset 표) 머리글을 빼고 열을 잡는다
+        alt = _project(anchors[1:])
+        if len(alt) > len(cols):
+            cols = alt
     if len(cols) < 2:
         return None
 
@@ -755,11 +793,22 @@ def _table_from_rows(bp: BPage, group: list[dict]) -> tuple[list[Line], dict] | 
         return min(range(len(cols)), key=lambda k: abs(cols[k][0] - w.x0))
 
     grid: list[list[list[Word]]] = []
+    phys: list[list[list[Word]]] = []     # 기준 행의 첫 줄 칸(2단 본문 판정은 이것으로 — 여러 줄 셀의 긴 설명은 빼고)
     for r in group:
         row: list[list[Word]] = [[] for _ in cols]
-        for c in r["cells"]:
-            for w in c:
-                row[col_of(w)].append(w)
+        if not r["cont"] and len(r["cells"]) == len(cols):
+            for k, c in enumerate(r["cells"]):     # 칸 수가 열 수와 같으면 순서대로(머리글이 열과 어긋나도)
+                row[k].extend(c)
+        else:
+            for c in r["cells"]:
+                for w in c:
+                    row[col_of(w)].append(w)
+        if not r["cont"]:
+            phys.append([list(cell) for cell in row])
+        if r["cont"] and grid:
+            for k in range(len(cols)):
+                grid[-1][k].extend(row[k])
+            continue
         if sum(1 for cell in row if cell) < 2:
             return None
         grid.append(row)
@@ -782,25 +831,34 @@ def _table_from_rows(bp: BPage, group: list[dict]) -> tuple[list[Line], dict] | 
     first_col = [" ".join(w.text for w in row[0]) for row in grid if row[0]]
     if first_col and all(len(t) <= 2 and not any(ch.isalnum() for ch in t) for t in first_col):
         return None
-    filled = [cell for row in grid for cell in row if cell]
+    # 나란히 놓인 그림 설명("Figure 1-2 | Figure 1-3" 다음 줄에 설명 둘)은 표가 아니다(4단계 QA, 실제 안내서 20건)
+    head = [" ".join(w.text for w in cell) for cell in grid[0] if cell]
+    if head and _CAPTION_RE.match(head[0]):
+        return None
+    # 칸의 절반 이상이 빈 표는 그림 속 블록·흩어진 낱말이다(실제 안내서의 Scratch 코드 그림)
+    if sum(1 for row in grid for cell in row if not cell) * 2 >= len(grid) * len(cols):
+        return None
+    filled = [cell for row in phys for cell in row if cell]
     texts = [" ".join(w.text for w in cell) for cell in filled]
     if sum(len(t) for t in texts) / len(texts) > TABLE_MAX_CELL_CHARS:
         return None
     if sum(len(cell) for cell in filled) / len(filled) > TABLE_MAX_CELL_WORDS:
         return None
-    lines = [ln for r in group for ln in r["lines"]]
-    para = sum(1 for ln in lines if bp.nlines.get(id(ln.block), 1) >= 3)
-    if para >= TABLE_PARA_SHARE * len(lines):
+    anchor_lines = [ln for r in anchors for ln in r["lines"]]
+    para = sum(1 for ln in anchor_lines if bp.nlines.get(id(ln.block), 1) >= 3)
+    if para >= TABLE_PARA_SHARE * len(anchor_lines):
         return None
 
     out_rows = []
     for row in grid:
         out_row = []
         for cell in row:
-            cell = sorted(cell, key=lambda w: (round(w.y0), w.x0))
+            # 줄 순서 → 줄 안 x 순서(낱말 y로 정렬하면 쉼표처럼 위치가 다른 글자가 앞으로 온다 — 4단계 QA)
+            cell = sorted(cell, key=lambda w: (w.line.y0, w.x0))
             out_row.append({"text": " ".join(w.text for w in cell),
                             "bold": bool(cell) and sum(1 for w in cell if w.line.bold) * 2 > len(cell)})
         out_rows.append(out_row)
+    lines = [ln for r in group for ln in r["lines"]]
     words = [w for row in grid for cell in row for w in cell]
     x0, y0 = min(w.x0 for w in words), min(w.y0 for w in words)
     x1, y1 = max(w.x1 for w in words), max(w.y1 for w in words)
@@ -966,10 +1024,16 @@ def _clamp(box: dict, W: float, H: float) -> None:
 # ── 8. 그림 픽셀 (pdftoppm) ────────────────────────────────────────────
 
 class Budget:
-    def __init__(self, deadline: float, max_bytes: int):
+    def __init__(self, deadline: float, max_bytes: int, should_stop=None):
         self.deadline = deadline
         self.max_bytes = max_bytes
         self.used = 0
+        self.should_stop = should_stop
+
+    def check_stop(self) -> None:
+        """요청한 쪽이 떠났으면(창 닫기·[다른 파일]·새로고침) 남은 쪽·그림을 만들지 않고 멈춘다(4단계 QA)."""
+        if self.should_stop is not None and self.should_stop():
+            raise LayoutError("CLIENT_GONE", "요청한 쪽이 연결을 끊음")
 
 
 def _render(data: bytes, page: int, f: Fig, budget: Budget) -> tuple[str | None, str | None]:
@@ -1011,6 +1075,7 @@ def _render_page(data: bytes, page: dict, figs: list[Fig], budget: Budget) -> tu
     total = omitted = 0
     for k, f in enumerate(figs):
         total += 1
+        budget.check_stop()
         if k >= FIGURES_PER_PAGE:
             reason = "LIMIT"
         elif time.monotonic() >= budget.deadline:
@@ -1060,8 +1125,10 @@ def _pages(data: bytes, bpages: list[BPage], first: int, fonts: Fonts, body: flo
     last = first + len(bpages) - 1
     for start in range(first, last + 1, LAYOUT_PAGES_PER_REQ):
         end = min(last, start + LAYOUT_PAGES_PER_REQ - 1)
+        budget.check_stop()
         images = _get_images(data, start, end, budget.deadline)
         for n in range(start, end + 1):
+            budget.check_stop()
             page, figs = _build_page(n, bpages[n - first], fonts.pieces.get(n, []), images.get(n), body)
             t, o = _render_page(data, page, figs, budget)
             figures += t
@@ -1071,17 +1138,17 @@ def _pages(data: bytes, bpages: list[BPage], first: int, fonts: Fonts, body: flo
 
 
 def layout(data: bytes, first: int = 1, last: int | None = None,
-           body_size: float | None = None, deadline: float | None = None) -> dict:
+           body_size: float | None = None, deadline: float | None = None, should_stop=None) -> dict:
     """PDF 바이트 → SPEC §10.4의 dict. first·last 범위 정리(§10.3)는 이 함수가 한다."""
     try:
-        return _layout(data, first, last, body_size, deadline)
+        return _layout(data, first, last, body_size, deadline, should_stop)
     except ExtractError:
         raise
     except Exception as exc:  # 계약: 예상 못 한 것은 BROKEN_PDF로 감싼다
         raise ExtractError("BROKEN_PDF", f"예상 못 한 예외 {type(exc).__name__}") from None
 
 
-def _layout(data, first, last, body_size, deadline) -> dict:
+def _layout(data, first, last, body_size, deadline, should_stop=None) -> dict:
     if deadline is None:
         deadline = time.monotonic() + LAYOUT_BUDGET_S
     _check_input(data)
@@ -1097,7 +1164,7 @@ def _layout(data, first, last, body_size, deadline) -> dict:
     bpages = _parse_bbox(_run_ok("pdftotext", ["-enc", "UTF-8", "-bbox-layout", "-f", str(first), "-l", str(last),
                                                "-", "-"], data))
     bpages = _fit_bpages(bpages, page_sizes, first, last)
-    budget = Budget(deadline, LAYOUT_FIGURE_BYTES)
+    budget = Budget(deadline, LAYOUT_FIGURE_BYTES, should_stop)
     out_pages, figures, omitted = _pages(data, bpages, first, fonts, body, budget)
     outline = _outline(fonts, pages)
     return {
@@ -1127,17 +1194,18 @@ def _fit_bpages(bpages: list[BPage], page_sizes: list[list[float]], first: int, 
     return bpages
 
 
-def export_html(data: bytes, file_name: str = "", deadline: float | None = None) -> tuple[str, dict]:
+def export_html(data: bytes, file_name: str = "", deadline: float | None = None,
+                should_stop=None) -> tuple[str, dict]:
     """PDF 바이트 → (내려받을 HTML 문자열, {"pages", "figures", "figures_omitted"}). 문서 전체, SPEC §10.6."""
     try:
-        return _export(data, file_name, deadline)
+        return _export(data, file_name, deadline, should_stop)
     except ExtractError:
         raise
     except Exception as exc:  # noqa: BLE001
         raise ExtractError("BROKEN_PDF", f"예상 못 한 예외 {type(exc).__name__}") from None
 
 
-def _export(data: bytes, file_name: str, deadline: float | None) -> tuple[str, dict]:
+def _export(data: bytes, file_name: str, deadline: float | None, should_stop=None) -> tuple[str, dict]:
     if deadline is None:
         deadline = time.monotonic() + EXPORT_BUDGET_S
     _check_input(data)
@@ -1146,7 +1214,7 @@ def _export(data: bytes, file_name: str, deadline: float | None) -> tuple[str, d
     body = _body_size(fonts)
     bpages = _parse_bbox(_run_ok("pdftotext", ["-enc", "UTF-8", "-bbox-layout", "-", "-"], data))
     bpages = _fit_bpages(bpages, page_sizes, 1, pages)
-    budget = Budget(deadline, EXPORT_FIGURE_BYTES)
+    budget = Budget(deadline, EXPORT_FIGURE_BYTES, should_stop)
     out_pages, figures, omitted = _pages(data, bpages, 1, fonts, body, budget)
     outline = _outline(fonts, pages)
     stats = {"pages": pages, "figures": figures, "figures_omitted": omitted}

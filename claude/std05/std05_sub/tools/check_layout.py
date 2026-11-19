@@ -608,6 +608,81 @@ def snapshot(dirs: list[Path]) -> set[str]:
     return seen
 
 
+def _layout_chars(data: bytes) -> tuple:
+    """(원문 bbox 단어의 글자 모음, layout 결과(문단·표 셀·그림 글자)의 글자 모음) — 공백 제외."""
+    from collections import Counter
+    raw = Counter()
+    for bp in L._parse_bbox(L._run_ok("pdftotext", ["-enc", "UTF-8", "-bbox-layout", "-", "-"], data)):
+        for b in bp.blocks:
+            for ln in b:
+                for w in ln.words:
+                    raw.update(ch for ch in w.text if not ch.isspace())
+    got = Counter()
+    n = L.layout(data, 1, 1)["doc"]["pages"]
+    for f in range(1, n + 1, L.LAYOUT_PAGES_PER_REQ):
+        for p in L.layout(data, f, None, 12.0)["pages"]:
+            for b in p["blocks"]:
+                texts = [c["text"] for row in b["rows"] for c in row] if b["type"] == "table" else [b.get("text") or ""]
+                for t in texts:
+                    got.update(ch for ch in t if not ch.isspace())
+    return raw, got
+
+
+def check_stop_and_tables(c: Checker, pdfs: Path, real: bool) -> None:
+    """(4단계 QA) 요청자가 떠났을 때 멈춤, 표 판정 개선(여러 줄 셀·그림 설명 쌍·빈 칸 많은 표)과 글자 보존."""
+    print("\n[4단계: 멈춤·표 판정·글자 보존]")
+    data = (pdfs / "struct.pdf").read_bytes()
+    for name, fn in (("layout", lambda: L.layout(data, 1, None, None, None, should_stop=lambda: True)),
+                     ("export_html", lambda: L.export_html(data, "s.pdf", should_stop=lambda: True))):
+        try:
+            fn()
+            code = None
+        except pdf_extract.ExtractError as exc:
+            code = exc.code
+        c.ok(code == "CLIENT_GONE", f"{name}(should_stop=참) → CLIENT_GONE", str(code))
+    c.ok(L.layout(data, 1, None, should_stop=lambda: False)["pages"], "layout(should_stop=거짓) → 정상")
+    names = ["struct.pdf", "xss.pdf", "twocol.pdf", "figs.pdf", "long.pdf"]
+    if real:
+        names += [n for n in ("real_mime_en.pdf", "real_xz_ko.pdf", "real_mkvmerge_ko.pdf", "real_rpi_text.pdf")
+                  if (pdfs / n).is_file()]
+    for name in names:
+        raw, got = _layout_chars((pdfs / name).read_bytes())
+        lost, added = raw - got, got - raw
+        hyph = lost.pop("-", 0)     # 줄 끝 하이픈 잇기(SPEC §10.4 — "infor-"+"mation" → "information")로 빠진 '-'만 허용
+        c.ok(not lost and not added, f"{name}: 원문 단어의 글자가 layout 결과(문단·표·그림 글자)에 빠짐·중복 없이 그대로"
+             f"(줄 끝 하이픈 잇기 {hyph}개 제외)", f"빠짐 {dict(lost)} · 더함 {dict(added)}")
+    if not real:
+        return
+
+    def tables(name: str, page: int) -> list:
+        d = (pdfs / name).read_bytes()
+        return [b for b in L.layout(d, page, page)["pages"][0]["blocks"] if b["type"] == "table"]
+
+    if (pdfs / "real_mime_en.pdf").is_file():
+        t = tables("real_mime_en.pdf", 5)
+        rows = [[cell["text"] for cell in r] for r in t[0]["rows"]] if t else []
+        c.ok(len(rows) == 4 and [r[0] for r in rows] == ["Attribute", "offset", "value", "mask"]
+             and rows[1][2].startswith("The byte offset(s) in the file to check.") and rows[3][2].endswith("with 0x."),
+             "real_mime_en 5쪽: 여러 줄 셀이 한 셀로(4행: Attribute·offset·value·mask)", str(rows)[:300])
+        t = tables("real_mime_en.pdf", 4)
+        c.ok(t and t[0]["rows"][1][2]["text"].startswith("string , host16 , host32 , big16"),
+             "real_mime_en 4쪽: 셀 안 낱말 순서(쉼표가 앞으로 몰리지 않음)", str(t[0]["rows"][1] if t else None))
+    if (pdfs / "real_xz_ko.pdf").is_file():
+        t = tables("real_xz_ko.pdf", 13)
+        c.ok(t and [cell["text"] for cell in t[0]["rows"][0]] == ["Preset", "DictSize", "CompCPU", "CompMem", "DecMem"]
+             and [cell["text"] for cell in t[0]["rows"][1]] == ["-0e", "256 KiB", "8", "4 MiB", "1 MiB"],
+             "real_xz_ko 13쪽 Preset 표: 머리글이 열과 어긋나도 5열", str(t[0]["rows"][:2] if t else None))
+    if (pdfs / "real_rpi_text.pdf").is_file():
+        d = (pdfs / "real_rpi_text.pdf").read_bytes()
+        caps = 0
+        for f in range(1, 291, 10):
+            for p in L.layout(d, f, None, 12.0)["pages"]:
+                for b in p["blocks"]:
+                    if b["type"] == "table" and b["rows"][0][0]["text"].startswith("Figure"):
+                        caps += 1
+        c.ok(caps == 0, "real_rpi_text: 나란한 그림 설명('Figure 1-2 | Figure 1-3')을 표로 잡지 않음", f"{caps}개")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="pdf_layout 모듈 점검 (모델 호출 0회)")
     ap.add_argument("--pdfs", default=str(Path(tempfile.gettempdir()) / "pdf-summary-test-pdfs"),
@@ -638,6 +713,7 @@ def main() -> int:
     check_export(c, pdfs, timings)
     check_file_names(c)
     check_tools_missing(c, pdfs)
+    check_stop_and_tables(c, pdfs, args.real)
     if args.real:
         check_real(c, pdfs, timings, report)
 

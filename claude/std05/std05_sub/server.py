@@ -137,6 +137,10 @@ class ClientGone(Exception):
     """본문이 Content-Length만큼 오지 않았다(끊김·시간 초과)."""
 
 
+class RequesterLeft(Exception):
+    """본문은 다 받았지만 처리 중에 요청자가 떠났다(보기·내려받기). 응답하지 않고 연결을 닫는다."""
+
+
 def log(line: str) -> None:
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{stamp}] {config.redact(line)}", file=sys.stderr, flush=True)
@@ -566,6 +570,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             return fn()
         except pdf_extract.ExtractError as exc:
+            if exc.code == "CLIENT_GONE":
+                # 보기 창·[다른 파일]·새로고침으로 요청자가 떠났다 — 남은 쪽을 만들지 않고 자리를 놓는다(응답할 곳이 없다).
+                raise RequesterLeft() from None
             code = "BAD_REQUEST" if exc.code == "BAD_RANGE" else exc.code
             if code == "NO_TEXT":     # 계약상 내지 않는다(글자가 적어도 쪽·그림은 보여 준다) — 생기면 버그
                 code = "INTERNAL"
@@ -575,14 +582,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _layout(self, data: bytes) -> None:
         first, last, body = self._layout_query()
-        result = self._with_slot(lambda: pdf_layout.layout(data, first if first is not None else 1, last, body))
+        result = self._with_slot(lambda: pdf_layout.layout(data, first if first is not None else 1, last, body,
+                                                           should_stop=self._client_gone))
         self._note = (f"from={result['from']} to={result['to']} figs={result['notes']['figures']} "
                       f"omitted={result['notes']['figures_omitted']}")
         self._json(200, result)
 
     def _export(self, data: bytes) -> None:
         file_name = clean_file_name(self.headers.get("X-Filename"))
-        text, stats = self._with_slot(lambda: pdf_layout.export_html(data, file_name))
+        text, stats = self._with_slot(lambda: pdf_layout.export_html(data, file_name, should_stop=self._client_gone))
         out_name = pdf_layout.export_file_name(file_name)
         disposition = ('attachment; filename="extracted.html"; filename*=UTF-8\'\''
                        + urllib.parse.quote(out_name, safe=""))
@@ -622,6 +630,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._linger()
             except OSError:
                 self.close_connection = True
+        except RequesterLeft:
+            self.close_connection = True
+            self._code = "CLIENT_GONE"
         except ClientGone:
             # 본문이 Content-Length보다 덜 왔다(업로드 도중 창 닫기·취소, 또는 잘린 요청).
             # 400을 한 번 시도하고, 클라이언트가 이미 없으면 조용히 끝낸다(트레이스백 없음).

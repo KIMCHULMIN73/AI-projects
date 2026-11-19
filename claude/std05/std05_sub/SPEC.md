@@ -7,6 +7,8 @@
 > **(추가 2026-11-17) 3·4단계 — 추출한 텍스트 보기·내려받기**의 계약은 [§10](#10-추출한-텍스트-보기내려받기-추가-2026-11-17--34단계)에 한 덩어리로 있다. 기존 절에는 바뀐 곳에만 "(추가 2026-11-17)" 표시와 §10 연결을 달았다. 1~2단계 계약(요약)은 바뀌지 않았다.
 >
 > **2026-11-17 구현 완료 뒤 실제 코드에 맞춰 고쳤다.** 처음 계약과 달라진 곳은 "(구현 후 변경)"으로 표시하고 근거를 함께 적었다. 바뀐 이유의 결정 번호는 [PRD 확정된 결정](PRD.md#확정된-결정과-근거) D14~D17.
+>
+> **(구현 후 변경 2026-11-19)** 3·4단계 구현·QA 통합 시험 뒤 §10을 실제 코드(`pdf_layout.py`·`server.py`·`viewer.js`·`run.sh`)에 맞춰 고쳤다. 바뀐 곳마다 "(구현 후 변경 2026-11-19)"로 표시했다 — §2, §10.1, §10.2, §10.3, §10.5(4·6·7단계, export, 회전 쪽), §10.8, §10.11, §10.12.
 
 목차
 1. [파일 구성과 소유권](#1-파일-구성과-소유권)
@@ -54,7 +56,7 @@
 ## 2. 실행과 포트
 
 - **[제안]** 주소 `http://127.0.0.1:8030/` 고정. 공감 다이어리(8020)와 동시에 띄울 수 있다. 가짜 서버는 8031.
-- `./run.sh` — `python3 -B server.py`로 서버를 띄우고 브라우저를 연다. `NO_OPEN=1 ./run.sh`는 서버만. Ctrl+C로 종료(자식 프로세스 남기지 않음).
+- `./run.sh` — `python3 -B server.py`로 서버를 띄우고 브라우저를 연다. `NO_OPEN=1 ./run.sh`는 서버만. Ctrl+C로 종료(자식 프로세스 남기지 않음). (구현 후 변경 2026-11-19) Ctrl+C·kill·터미널 닫힘 때 서버를 끄고 **서버가 실제로 끝날 때까지 기다린 뒤**(`wait`) 끝난다 — 바로 다시 `./run.sh` 하면 끝나 가던 서버를 "이미 실행 중"으로 보던 틈을 막음(4단계 QA). 종료코드는 신호별로 INT 130 · TERM 143 · HUP 129.
   - 8030이 비어 있으면 실행, **이 앱이 이미 떠 있으면 브라우저만 연다**, 다른 프로그램이 쓰고 있으면 한국어로 알리고 종료코드 1. 이 앱인지는 응답 `Server` 헤더가 `pdf-summary`로 시작하는지로 가린다.
   - 시작 전에 `pdftotext`·`pdfinfo`가 없으면 "PDF 도구가 없습니다: sudo apt install poppler-utils" 경고를 찍는다. **서버는 그래도 띄운다**(화면에서 같은 안내가 보이도록, §4.3 `TOOL_MISSING`).
   - 키가 없으면(`config.find_api_key` 실패) 경고만 찍고 서버는 띄운다(요약 시 `NO_KEY`).
@@ -557,8 +559,8 @@ chromium --headless --no-sandbox --disable-gpu --no-pdf-header-footer \
 | 글자·줄·위치 | `pdftotext -bbox-layout`의 단어 좌표(pt). [실측] 한국어 띄어쓰기가 단어 단위로 정확(chromium PDF "도시 / 텃밭이 / 동네를") | 글꼴은 원본과 다르다(브라우저 기본 글꼴). 원본 배치 모드는 줄 폭을 원본에 맞춰 늘이고 줄인다 |
 | 글자 크기·굵기 | `pdftohtml -xml -i`의 `fontspec size`·`<b>`·글꼴 이름의 `Bold`를 좌표로 줄에 맞춤. 못 맞추면 줄 높이 ÷ 1.15로 추정([실측] 24pt 글자의 줄 높이 27.6pt, 12pt → 13.8pt) | 색·기울임·밑줄은 옮기지 않는다 |
 | 제목(h1~h3) | 문서 본문 크기(`body_size`, 글자 수가 가장 많은 크기)와 비교: ≥1.6배 h1, ≥1.3배 h2, ≥1.15배 또는 (굵고 본문 크기 이상이며 한 줄·60자 이하인 블록) h3 [제안] | 크기 차이 없이 굵기·색으로만 구분한 제목은 놓칠 수 있다 |
-| 표 | PDF에는 표 구조가 없다 — 단어 좌표의 **열 정렬로 추정**(§10.5 6단계) | 병합 셀(colspan/rowspan)·셀 안 여러 줄·테두리 없는 표·2단 본문 구분은 틀릴 수 있다. 감지 못 한 표는 일반 문단으로 보인다(글자는 잃지 않는다) |
-| 그림 | 위치는 `pdftohtml -xml -dataurls`의 `<image>` 상자, 픽셀은 그 영역을 `pdftoppm`으로 **다시 렌더해 잘라 낸 것**(96dpi) | 벡터로 그린 도표(선·도형만, 내장 이미지 없음)는 그림으로 잡히지 않는다. 그림 안의 글자는 그림 속에 보이고 글자 층에서는 빠진다(§10.5 7단계) |
+| 표 | PDF에는 표 구조가 없다 — 단어 좌표의 **열 정렬로 추정**(§10.5 6단계) | 병합 셀(colspan/rowspan)·테두리 없는 표·2단 본문 구분은 틀릴 수 있다. 감지 못 한 표는 일반 문단으로 보인다(글자는 잃지 않는다). (구현 후 변경 2026-11-19) **셀 안 여러 줄은 부분 지원** — 첫 열이 빈 줄은 위 행 셀의 다음 줄로 잇는다(§10.5 6단계). 남은 알려진 오탐·오분할: 양쪽 맞춤으로 띄어쓰기가 넓은 문단(실제 문서 xz 18쪽), 문장 안에 나란히 놓인 작은 그림(rpi_text 85쪽 Scratch), 3열 표의 두 열이 합쳐짐(xz 28쪽) |
+| 그림 | 위치는 `pdftohtml -xml -dataurls`의 `<image>` 상자(구현 후 변경 2026-11-19: 그 도구가 죽는 쪽은 `pdftocairo -svg`로 계산 — §10.5 7-b), 픽셀은 그 영역을 `pdftoppm`으로 **다시 렌더해 잘라 낸 것**(96dpi) | 벡터로 그린 도표(선·도형만, 내장 이미지 없음)는 그림으로 잡히지 않는다. 그림 안의 글자는 그림 속에 보이고 글자 층에서는 빠진다(§10.5 7단계) |
 | 목차 | PDF 책갈피(`pdftohtml -xml`의 `<outline>`)가 있으면 그것(쪽 단위 이동). 없으면 h1·h2로 만든 목차(블록 단위 이동) | 책갈피 이름이 실제 제목과 다를 수 있다(그대로 보여준다) |
 | 스캔한 쪽 | 쪽 전체가 그림 하나 → 그림으로 보인다(글자 인식 없음, D11) | 문서 전체가 스캔본(`NO_TEXT`)이면 메인 창에 버튼이 없다(미결 U16) |
 
@@ -576,13 +578,27 @@ chromium --headless --no-sandbox --disable-gpu --no-pdf-header-footer \
 | `BACKGROUND_AREA` | 0.5 — 쪽 면적의 절반 이상을 덮고 그 안에 글자가 있는 그림은 배경으로 보고 넣지 않음 | `pdf_layout.py` | 표지·배경 무늬가 글자를 가리지 않게. 글자 없는 전면 그림(스캔한 쪽)은 넣는다. 가정 |
 | `OUTLINE_MAX` | 2,000 항목 | `pdf_layout.py` | 가정. [실측] 실제 안내서 책갈피 237개 |
 | 도구 실행 1회 제한 | `EXTRACT_TIMEOUT_S` 30초(재사용) | `pdf_extract.py` | §3 |
-| `LAYOUT_BUDGET_S` | 60초 (요청 하나) | `pdf_layout.py` | 가정. 넘으면 남은 그림은 `omitted: "TIME"`, 글자는 끝까지 |
+| `LAYOUT_BUDGET_S` | 60초 (요청 하나) | `pdf_layout.py` | 가정. 넘으면 남은 그림은 `omitted: "TIME"`, 글자는 끝까지. (구현 후 변경 2026-11-19) 그림 **위치**는 예산과 무관하게 얻는다(§10.5 7단계) — 예산이 지나면 픽셀만 `TIME` |
 | `EXPORT_BUDGET_S` | 150초 (내려받기 하나) | `pdf_layout.py` | 가정. 넘으면 남은 그림은 자리 표시, 글자는 끝까지 |
 | `LAYOUT_SLOTS` | 2 (`/api/layout`·`/api/export` 동시 처리 수, 요약 잠금과 별개) | `server.py` | Pi CPU 보호. 자리를 10초(`LAYOUT_WAIT_S`) 기다려도 없으면 409 `BUSY` |
 | 화면 요청 제한시간 | layout 90초, export 200초 | `app.js`·`viewer.js` | 서버 예산 + 여유. 넘으면 `CLIENT_TIMEOUT` |
 | 보기 창 연결 대기 | 3초 | `viewer.js` | 메인 창 응답이 이 안에 없으면 `NO_SOURCE` |
+| `NO_DOC_GRACE_MS` (구현 후 변경 2026-11-19) | 0.5초 | `viewer.js` | `no-doc`을 받아도 바로 `NO_SOURCE`로 가지 않고 이만큼 더 기다린다 — 같은 출처의 다른 탭(같은 문서를 든 메인 창)이 `doc`을 줄 수 있다 |
 
 목표 시간 [제안, 4단계 실측]: `struct.pdf`(2쪽) 보기 창 첫 쪽 2초 안·내려받기 3초 안, `long.pdf`(78쪽, 글자만) 첫 5쪽 3초 안·전체 30초 안·내려받기 20초 안.
+
+**[실측 2026-11-19, 4단계 QA] 목표 모두 통과** (구현 후 변경 2026-11-19):
+
+| 문서 | 보기 첫 쪽 | 보기 전체 | 다운로드 |
+|---|---|---|---|
+| `struct.pdf` (2쪽) | 0.37초 | — | 0.23초 |
+| `long.pdf` (78쪽, 글자만) | 0.86초 | 4.2초 | 1.85초 |
+| `pages300` (300쪽) | — | 9.3초 | 1.34초 |
+| `real_rpi_text.pdf` (290쪽, 글자 많음, 그림은 `-dFILTERIMAGE`로 뺀 문서) | 1.53초 | 16.7초 | — |
+| 실제 안내서 앞 40쪽 (13.7MB, 그림 46개 모두 그려짐) | — | 20.7초 | 19.5초 · 3.6MB |
+
+- 290쪽 글자 많은 문서는 보기 창이 불러오는 동안 긴 작업(long task) 31회(최대 1.16초), DOM 약 5.5만 노드. 줄이는 방법(`content-visibility: auto`)은 **제안**이다 — 목차 이동 위치가 어긋날 위험이 있어 적용하지 않았다(PRD 미결 U22).
+- `real_rpi_text.pdf`는 그림을 뺀 문서라 그림 많은 경우의 측정용이 아니다. 그림 많은 측정은 위 "안내서 앞 40쪽"으로 했고, 이 문서를 `make_test_pdfs --real`에 넣을지는 **제안**(PRD 미결 U21).
 
 ### 10.3 HTTP API (추가)
 
@@ -597,6 +613,7 @@ chromium --headless --no-sandbox --disable-gpu --no-pdf-header-footer \
 - 경로 비교는 쿼리 문자열을 뗀 뒤 한다(`/api/layout?from=1&to=5` → `/api/layout`).
 - 처리 자리: `LAYOUT_SLOTS`개. `LAYOUT_WAIT_S`(10초) 기다려도 자리가 없으면 409 `BUSY`. 요약 잠금(`_summarize_lock`)과는 별개라 요약 중에도 된다.
 - 오류 코드는 §4.3 표를 재사용한다: `EMPTY_FILE` · `NOT_PDF` · `ENCRYPTED` · `BROKEN_PDF` · `TOO_LONG`(300쪽 초과) · `EXTRACT_TIMEOUT` · `TOOL_MISSING`(네 도구 중 하나라도 없음) · `BUSY` · `BAD_REQUEST` · `INTERNAL`. **`NO_TEXT`는 내지 않는다**(글자가 적어도 그림·쪽은 보여준다).
+- (구현 후 변경 2026-11-19) **요청자가 떠나면 멈춘다**: 서버는 `pdf_layout.layout`·`export_html`에 `should_stop`(연결 끊김 감지 함수)을 넘기고, 모듈은 쪽·그림마다 확인해 내부 코드 `CLIENT_GONE`(`LayoutError`, `ExtractError`의 하위 클래스)으로 멈춘다. 서버는 응답을 쓰지 않고 연결을 닫으며 로그 코드 `CLIENT_GONE`, 처리 자리(`LAYOUT_SLOTS`)를 즉시 놓는다. 보기 창을 닫거나 [다른 파일]·새로고침 뒤에도 서버가 끝까지 만들며 자리를 붙잡던 문제(4단계 QA)를 막는다. `CLIENT_GONE`은 HTTP 응답 코드가 아니다(받을 사람이 없음).
 - 로그: 시각·메서드·경로(쿼리 없이)·상태·코드·본문 바이트·ms, layout은 `from`·`to`·그림 수, export는 쪽 수·그림 수·생략 수. 파일 이름·제목·본문·책갈피 이름은 찍지 않는다.
 
 `POST /api/layout` 쿼리:
@@ -620,6 +637,8 @@ X-Figures-Omitted: 0
 {"ok": true, "app": "pdf-summary", "tools": {"pdftotext": true, "pdfinfo": true}, "key": true,
  "layout_tools": {"pdftohtml": true, "pdftoppm": true}}
 ```
+(구현 후 변경 2026-11-19) `pdftocairo`(§10.5 7-b의 대안 경로)는 `layout_tools`·`check_tools()`·`TOOLS`에 넣지 않는다 — 없으면 대안 경로만 조용히 건너뛰고 그 쪽은 `figures_failed: true`.
+
 `tools`에 넣지 않고 따로 두는 이유: 기존 화면은 `tools`에 false가 하나라도 있으면 추출 불가 안내를 띄운다 — 보기 도구가 없어도 추출·요약은 된다. 화면은 `layout_tools`에 false가 있으면 두 버튼을 비활성으로 두고 그 옆에 `TOOL_MISSING` 문구를 보여준다.
 
 ### 10.4 `/api/layout` 응답 JSON
@@ -698,32 +717,44 @@ def check_tools() -> dict[str, bool]:
     """{"pdftotext", "pdfinfo", "pdftohtml", "pdftoppm"} — shutil.which로만."""
 
 def layout(data: bytes, first: int = 1, last: int | None = None,
-           body_size: float | None = None, deadline: float | None = None) -> dict:
+           body_size: float | None = None, deadline: float | None = None, should_stop=None) -> dict:
     """PDF 바이트 → §10.4의 dict. first·last는 서버가 정리하기 전의 값 — 범위 정리(§10.3)는 이 함수가 한다.
-    deadline은 time.monotonic() 기준 절대 시각(None이면 지금 + LAYOUT_BUDGET_S)."""
+    deadline은 time.monotonic() 기준 절대 시각(None이면 지금 + LAYOUT_BUDGET_S).
+    should_stop(인자 없는 함수, 구현 후 변경 2026-11-19)이 참이면 CLIENT_GONE으로 멈춘다."""
 
-def export_html(data: bytes, file_name: str = "", deadline: float | None = None) -> tuple[str, dict]:
+def export_html(data: bytes, file_name: str = "", deadline: float | None = None,
+                should_stop=None) -> tuple[str, dict]:
     """PDF 바이트 → (내려받을 HTML 문자열, {"pages", "figures", "figures_omitted"}). 문서 전체, §10.6."""
 
 def export_file_name(file_name: str) -> str:
     """§10.6 파일 이름 규칙. 서버의 Content-Disposition과 시험이 함께 쓴다."""
 ```
 
-- 던지는 예외는 `ExtractError`뿐: `EMPTY_FILE` · `NOT_PDF` · `ENCRYPTED` · `BROKEN_PDF` · `TOO_LONG` · `EXTRACT_TIMEOUT` · `TOOL_MISSING` · `BAD_RANGE`(→ 서버가 400 `BAD_REQUEST`로). 예상 못 한 것은 `BROKEN_PDF`로 감싼다. `server.py`는 `pdf_layout.layout(...)`처럼 모듈 속성으로 부른다(시험이 바꿔 끼움). `pdf_layout` import가 실패해도 서버는 뜨고 두 경로만 500 `INTERNAL`.
+- 던지는 예외는 `ExtractError`뿐: `EMPTY_FILE` · `NOT_PDF` · `ENCRYPTED` · `BROKEN_PDF` · `TOO_LONG` · `EXTRACT_TIMEOUT` · `TOOL_MISSING` · `BAD_RANGE`(→ 서버가 400 `BAD_REQUEST`로) · (구현 후 변경 2026-11-19) `CLIENT_GONE`(→ 서버가 응답 없이 닫음, §10.3). `BAD_RANGE`·`CLIENT_GONE`은 `ExtractError`의 하위 클래스 `LayoutError`로 던진다. 예상 못 한 것은 `BROKEN_PDF`로 감싼다. `server.py`는 `pdf_layout.layout(...)`처럼 모듈 속성으로 부른다(시험이 바꿔 끼움). `pdf_layout` import가 실패해도 서버는 뜨고 두 경로만 500 `INTERNAL`.
 - **디스크**: 입력은 모두 stdin, 출력은 stdout. 다만 `pdftohtml`은 stdin을 읽을 때 출력 이름 인자를 요구하고([실측] 없으면 "You have to provide an output filename when reading from stdin"), `pdftoppm`은 출력 이름을 주면 파일을 쓴다([실측] 이름으로 `-`를 주자 작업 폴더에 `--014.png`가 생김). 그래서 **모든 도구를 새로 만든 빈 임시 폴더(`tempfile.TemporaryDirectory()`)를 `cwd`로 해서 실행**하고, 끝나면 폴더가 비어 있는지 확인한 뒤(비어 있지 않으면 지우고 로그에 코드 `STRAY_FILES`만) 폴더째 지운다. 그 밖에 임시 파일을 만들지 않는다. `shell=True` 금지, 고정 인자 목록, 사용자 입력은 인자로 넘기지 않는다.
 
 처리 순서 (`layout`):
 1. 빈 바이트 → `EMPTY_FILE`, 앞 1024바이트에 `%PDF-` 없음 → `NOT_PDF`, `check_tools()`에 false → `TOOL_MISSING`.
 2. `pdfinfo -enc UTF-8 -` → 쪽수·제목(`ENCRYPTED`·`BROKEN_PDF` 판별은 `pdf_extract`와 같음), 쪽수 > `MAX_PAGES` → `TOO_LONG`. `pdfinfo -f 1 -l <쪽수> -` → `Page N size: W x H pts`와 `Page N rot: R`(90·270이면 가로세로 바꿈) → `page_sizes`. 범위 정리(§10.3), 잘못이면 `BAD_RANGE`.
-3. 글자: `pdftotext -enc UTF-8 -bbox-layout -f F -l T - -` → XHTML `page(width,height)` > `flow` > `block` > `line` > `word(xMin,yMin,xMax,yMax)`. 단어 순서·블록 순서 = 읽는 순서.
+3. 글자: `pdftotext -enc UTF-8 -bbox-layout -f F -l T - -` → XHTML `page(width,height)` > `flow` > `block` > `line` > `word(xMin,yMin,xMax,yMax)`. 단어 순서·블록 순서 = 읽는 순서. (구현 후 변경 2026-11-19) [실측 2026-11-18] `/Rotate 90` 쪽에서 bbox의 단어 좌표는 회전한 화면 좌표인데 `<page width height>`만 회전 전 값(612×792)을 낸다(`pdftohtml`·`pdftocairo`는 회전 후 792×612) → 쪽 크기는 2의 `pdfinfo` 값(회전 반영)으로 바꾼다(`_fit_bpages` — 쪽 수가 범위와 다르면 빈 쪽으로 채우거나 자르기도 함). 회전 쪽에서 `pdftohtml`이 내는 음수 폭·높이는 상자를 뒤집어 정규화한다. **CropBox가 MediaBox와 다른 쪽은 시험하지 않았다.**
 4. 글꼴·책갈피: `pdftohtml -xml -stdout -q -i -zoom 1 -noroundcoord -enc UTF-8 -f F -l T - x` → `fontspec(id,size,family)`, `text(top,left,width,height,font)` + `<b>`, `<outline><item page>`(중첩 `<outline>`이 한 단계 깊음). [실측] `-zoom 1`이면 좌표 단위가 pt로 bbox와 같다(기본 1.5배). [실측] `-f 2 -l 2`로 돌려도 책갈피는 문서 전체가 나온다. [실측] chromium 한국어 PDF에서 이 출력은 띄어쓰기가 사라지므로 **글자는 3에서만 가져오고 여기서는 크기·굵기만** 쓴다: bbox 줄마다 세로로 50% 이상 겹치고 가로로 겹치는 `text` 조각 중 겹친 넓이가 가장 큰 것의 크기·굵기(`<b>` 또는 family에 `Bold`). 못 찾으면 크기 = 줄 높이 ÷ 1.15, 굵기 false. 실패(0이 아닌 종료)하면 모든 줄을 추정값으로, 책갈피는 `[]`.
 5. 본문 크기: 쿼리 `body`가 있으면 그 값. 없으면 4와 같은 명령을 **문서 전체**(`-f`·`-l` 없이)로 한 번 더 돌려, 글자 수 합이 가장 큰 크기. [실측] 그림 많은 290쪽 안내서 1.34초.
 6. 표 감지 [제안 — backend가 조정 가능, 결과는 §10.11 시험으로 판정]: 한 쪽의 줄을 세로 위치로 묶어 행을 만들고(서로 다른 bbox 블록이라도 세로로 겹치면 같은 행 — [실측] 시험 표의 "마포 12"와 "340"은 다른 블록), 행 안에서 단어 간격이 줄 높이 × 0.6 이상인 곳을 칸 경계로 본다. 2칸 이상인 행이 2개 이상 연속(행 간격 ≤ 줄 높이 × 2)이고 칸 왼쪽 x가 ±4pt 안에서 2열 이상 맞으면 표 후보로 하고, 그 열 위치(`cols`)에 맞춰 같은 무리의 행을 다시 나눈다([실측] 머리글 "구 텃밭 수 참여 가구"는 간격만으로는 "텃밭 수 참여 가구"가 한 칸이 되지만 아래 행의 열 위치 64.6·106.3에 맞추면 3칸이 된다). 셀 글자가 평균 40자를 넘으면 표가 아니라 2단 본문으로 보고 버린다. 표가 된 줄은 원래 블록에서 빼고 그 자리에 `table` 블록 하나를 둔다.
-7. 그림 위치: `pdftohtml -xml -stdout -q -dataurls -zoom 1 -noroundcoord -f F -l T - x` → `<image top left width height>`(속성만 쓰고 `src` 데이터는 버린다). [실측] `-dataurls` 없이 돌리면 그림 파일을 디스크에 쓰고 290쪽 안내서에서 47초·45MB가 걸려 쓰지 않는다. [실측] `-dataurls`는 실제 안내서에서 문서 전체로 돌리면 세그멘테이션 오류(종료 139)로 죽고, 쪽 하나씩 돌리면 40쪽 중 3쪽(1·11·25쪽)만 죽는다 → **범위 전체로 한 번 돌려 실패하면 쪽마다 다시 돌리고, 그 쪽도 실패하면 `figures_failed: true`**. 상자를 쪽 안으로 자르고 `FIGURE_MIN_PT`보다 작으면 버린다. 쪽 면적의 `BACKGROUND_AREA` 이상이면서 그 안에 단어가 있으면 버리고 `background_skipped`를 센다. 남은 그림 안에 중심이 들어가는 단어는 글자 층(블록·표)에서 빼서 그림의 `text`로 옮긴다. 그림은 위쪽 y 기준으로, 처음으로 y가 그림의 y 이상인 블록 앞에 끼운다.
+   (구현 후 변경 2026-11-19 — 4단계 QA가 실제 문서로 조정. 상수는 `pdf_layout.py`의 `TABLE_*`)
+   - **여러 줄 셀 잇기**: 2칸 이상인 행(기준 행) 사이·뒤의 한 칸 줄이 첫 열이 비고 둘째 열 이후에서 시작하면(첫 칸 x ≥ 둘째 열 이후 칸들의 가장 왼쪽 x − 4pt) 바로 위 행 셀의 다음 줄로 붙인다. 잇고 나서 표가 안 되면 잇지 않는 규칙(기준 행만)으로 다시 판정한다.
+   - **열 계산**: 칸 상자를 x축에 투영해 겹치는 것끼리 열로 묶는다. 기준 행이 3개 이상이면 머리글(첫 기준 행)을 뺀 열 계산이 열을 더 많이 내면 그것을 쓴다(머리글이 두 열에 걸치는 표). 칸 수가 열 수와 같은 행은 칸 순서대로 열에 배정, 아니면 낱말 중심 x로 배정.
+   - **셀 글자 순서**: 셀 안 낱말은 줄 순서 → 줄 안 x 순서로 잇는다.
+   - **표가 아닌 것**: ① 열 정렬(왼쪽·오른쪽·가운데 중 하나가 ±4pt로 2행 이상 맞는 열)이 2개 미만 ② 첫 열이 모두 글머리표 기호뿐 ③ **첫 행 첫 칸이 `Figure`·`Fig.`·`Table`·`그림`·`표`·`사진`으로 시작**(나란한 그림 설명 쌍) ④ **빈 칸이 전체의 절반 이상**(그림 속 흩어진 낱말) ⑤ 셀 평균 40자 초과 또는 평균 6단어 초과 ⑥ 기준 행 줄의 절반 이상이 3줄 이상 문단 블록에서 옴. ⑤·⑥의 **2단 본문 판정은 기준 행의 첫 줄 칸으로만** 한다(여러 줄 셀의 긴 설명이 판정을 흔들지 않게).
+   - [실측 2026-11-19] 실제 문서 3종에서 표 43 → 21개, 명확한 오탐 25 → 2개, 글자 손실 0(`check_layout --real`의 글자 보존 시험). 남은 오탐: xz 18쪽(양쪽 맞춤 넓은 띄어쓰기), rpi_text 85쪽(문장 안 Scratch 그림). 남은 오분할: xz 28쪽 3열 표의 2열이 합쳐짐. 좌표만으로는 좁은 열 표와 구별되지 않아 더 고치지 않았다(열 사이 빈 띠 최소폭 규칙은 다른 표를 깨서 되돌림).
+7. 그림 위치: `pdftohtml -xml -stdout -q -dataurls -zoom 1 -noroundcoord -f F -l T - x` → `<image top left width height>`(속성만 쓰고 `src` 데이터는 버린다). [실측] `-dataurls` 없이 돌리면 그림 파일을 디스크에 쓰고 290쪽 안내서에서 47초·45MB가 걸려 쓰지 않는다. [실측] `-dataurls`는 실제 안내서에서 문서 전체로 돌리면 세그멘테이션 오류(종료 139)로 죽고, 쪽 하나씩 돌리면 40쪽 중 3쪽(1·11·25쪽)만 죽는다 → **범위 전체로 한 번 돌려 실패하면 쪽마다 다시 돌리고, 그 쪽도 실패하면 `figures_failed: true`**. (구현 후 변경 2026-11-19) 실제로는 다음과 같다:
+   - **7-a.** 범위 전체 1회는 **예산(`deadline`)과 무관하게** 돌린다(`timed=False`, 제한은 `EXTRACT_TIMEOUT_S`) — 그림 자리는 쪽 구조의 일부라서. 예산이 지나면 픽셀만 `TIME`(8단계). 쪽마다 다시 돌리는 것은 예산 안에서만.
+   - **7-b.** [실측 2026-11-18] poppler 25.03의 `-dataurls`는 실제 안내서뿐 아니라 평범한 쪽(chromium이 만든 PNG 그림 쪽 `figs.pdf` 2쪽, gs로 만든 스캔 쪽 `mixed.pdf` 2쪽)에서도 쪽 하나만으로 세그멘테이션 오류·double free로 죽는다. 그대로 두면 스캔한 쪽·큰 그림이 빠지므로, 쪽 단위도 죽은 쪽은 **`pdftocairo -svg -f P -l P - -`(stdin→stdout)** 의 SVG에서 `<image>`·`<use>` 변환 행렬과 잘라내기 상자로 그림 상자를 계산한다. 이것도 실패하거나, `pdftocairo`가 없거나, 예산이 지났으면 그때 `figures_failed: true`. `pdftocairo`는 같은 poppler-utils에 들어 있지만 필수 도구가 아니다(§10.3 health 참고). 상자를 쪽 안으로 자르고 `FIGURE_MIN_PT`보다 작으면 버린다. 쪽 면적의 `BACKGROUND_AREA` 이상이면서 그 안에 단어가 있으면 버리고 `background_skipped`를 센다. 남은 그림 안에 중심이 들어가는 단어는 글자 층(블록·표)에서 빼서 그림의 `text`로 옮긴다. 그림은 위쪽 y 기준으로, 처음으로 y가 그림의 y 이상인 블록 앞에 끼운다.
 8. 그림 픽셀: 그림마다 `pdftoppm -png -r 96 -f P -l P -x X -y Y -W W -H H -`(stdin, **출력 이름을 주지 않아야 stdout**. X·Y·W·H는 pt × 96/72를 반올림한 픽셀). 결과가 `FIGURE_PNG_MAX_BYTES`를 넘으면 `-jpeg -jpegopt quality=85`로 다시. [실측] stdout PNG 확인. 쪽당 `FIGURES_PER_PAGE`, 요청당 `LAYOUT_FIGURE_BYTES`를 넘거나 `deadline`이 지나면 그 뒤 그림은 렌더하지 않고 `omitted`(`LIMIT`·`TIME`), 도구 실패는 `FAILED`.
 9. 정규화(§10.4 끝)와 `id` 붙이기.
 
-`export_html`은 1~2를 한 번, 5를 한 번 한 뒤 `LAYOUT_PAGES_PER_REQ`쪽씩 3~8을 반복해 모든 쪽을 모으고(그림 바이트 상한은 `EXPORT_FIGURE_BYTES`, 시간은 `EXPORT_BUDGET_S`) §10.6대로 HTML을 만든다. 그림이 생략돼도 글자·표는 모든 쪽이 들어간다.
+`export_html`은 1~2를 한 번, 5를 한 번 한 뒤 `LAYOUT_PAGES_PER_REQ`쪽씩 3~8을 반복해 모든 쪽을 모으고 — (구현 후 변경 2026-11-19) 실제로는 **3(`pdftotext -bbox-layout`)·4(글꼴·책갈피)를 문서 전체로 한 번씩** 돌리고, **그림(7~8)만 `LAYOUT_PAGES_PER_REQ`(10)쪽씩** 나눠 처리한다 — (그림 바이트 상한은 `EXPORT_FIGURE_BYTES`, 시간은 `EXPORT_BUDGET_S`) §10.6대로 HTML을 만든다. 그림이 생략돼도 글자·표는 모든 쪽이 들어간다.
+
+(구현 후 변경 2026-11-19) 아래 확인 결과: 회전 쪽은 3단계의 `_fit_bpages`·음수 크기 정규화로 맞춤(시험 PDF `landscape.pdf`와 `/Rotate 90` 쪽을 직접 쓴 `make_test_pdfs.rotated_pdf()`, `check_layout` 통과). CropBox≠MediaBox는 **미시험**. 나머지 두 항목은 보고되지 않았다.
 
 구현 시 확인(backend가 실측해 보고): 회전된 쪽·CropBox가 MediaBox와 다른 쪽에서 세 도구(`pdftotext`·`pdftohtml`·`pdftoppm`)의 좌표가 일치하는지, 20MB PDF를 10쪽마다 다시 받는 비용, `-dataurls` 출력이 큰 그림에서 차지하는 메모리.
 
@@ -796,14 +827,14 @@ def export_file_name(file_name: str) -> str:
 
 외부 라이브러리·CDN 없음, `innerHTML` 금지(문서·서버 문자열은 `textContent`, 그림은 `img.src`에 §10.6과 같은 data URI 검사를 통과한 것만). `<html lang="ko">`, `<title>`은 받은 뒤 "{제목} — 추출한 텍스트 보기".
 
-1. **문서 받기**: 주소의 `#doc=TOKEN`을 읽어 `BroadcastChannel('pdf-summary-viewer')`로 `{type: 'need-doc', token}`을 보낸다. 3초 안에 `doc`이 오면 진행, `no-doc`이나 응답 없음 → `NO_SOURCE` 화면: "원래 창(한눈 PDF 요약)이 닫혔거나 다른 파일을 열어 이 문서를 다시 받을 수 없어요. 원래 창에서 [추출한 텍스트 보기]를 다시 눌러 주세요." + [다시 연결] 버튼(같은 요청을 다시). 받은 File은 이 창의 메모리에만 둔다 — 그 뒤 메인 창이 닫혀도 이 창은 계속 동작한다. **새로고침하면** 메인 창이 같은 문서를 들고 있을 때만 다시 열린다(그렇지 않으면 `NO_SOURCE`). 저장소(`localStorage`·`sessionStorage`·IndexedDB)에 문서를 넣지 않는다.
+1. **문서 받기**: 주소의 `#doc=TOKEN`을 읽어 `BroadcastChannel('pdf-summary-viewer')`로 `{type: 'need-doc', token}`을 보낸다. 3초 안에 `doc`이 오면 진행, `no-doc`이나 응답 없음 → `NO_SOURCE` 화면 (구현 후 변경 2026-11-19: `no-doc`을 받아도 `NO_DOC_GRACE_MS` 0.5초 더 기다린다 — 같은 출처의 다른 탭이 문서를 줄 수 있다. 3초 전체 대기는 그대로): "원래 창(한눈 PDF 요약)이 닫혔거나 다른 파일을 열어 이 문서를 다시 받을 수 없어요. 원래 창에서 [추출한 텍스트 보기]를 다시 눌러 주세요." + [다시 연결] 버튼(같은 요청을 다시). 받은 File은 이 창의 메모리에만 둔다 — 그 뒤 메인 창이 닫혀도 이 창은 계속 동작한다. **새로고침하면** 메인 창이 같은 문서를 들고 있을 때만 다시 열린다(그렇지 않으면 `NO_SOURCE`). 저장소(`localStorage`·`sessionStorage`·IndexedDB)에 문서를 넣지 않는다.
 2. **불러오기**: `POST /api/layout?from=1&to=5`를 먼저, 이후 `from`을 5씩 늘려 **한 번에 하나씩 끝까지** 자동으로 부른다(두 번째부터 `&body={첫 응답 body_size}`). 첫 응답의 `doc.page_sizes`로 모든 쪽의 빈 자리(같은 비율의 회색 상자 + "{n}쪽 불러오는 중")를 미리 만든다. 목차에서 아직 안 불러온 쪽을 누르면 그 쪽이 든 5쪽 묶음을 다음 차례로 앞당긴다. 위쪽 도구 막대에 "{불러온 쪽}/{전체}쪽" 진행 표시. 요청 하나가 실패하면 그 묶음 자리에 오류 문구 + [다시 시도], 다른 묶음은 계속.
 3. **두 가지 모드**(도구 막대의 전환 단추, `aria-pressed`): 
    - **원본 배치**: 쪽마다 `width`×`height` 비율의 흰 종이(그림자), 줄은 `position: absolute`로 `x`·`y`에 놓고 `font-size`는 `size`, `font-weight`는 `bold`. 그린 뒤 실제 폭을 재어 줄 폭 `w`에 맞게 `transform: scaleX()`(0.5~2로 제한). 표는 실제 `<table>`을 표 상자 위치에 두고 열 폭은 `cols` 차이로. 그림은 `<img>`를 상자 위치·크기로. 종이 전체를 화면 폭에 맞춰 비율로 줄인다(넓은 화면 최대 폭 = 원본 pt × 96/72 px, 곧 100%).
    - **읽기 모드**: §10.6 파일과 같은 흐름 배치(블록을 순서대로, 제목 h2~h4, 표 `<table>`, 그림 `<figure>`), 쪽마다 "{n}쪽" 구분선. 글자 크기는 화면 기본.
    - 기본: 창 폭 700px 이상이면 원본 배치, 미만이면 읽기 모드 [제안 U18]. 모드를 바꿔도 보던 쪽을 유지한다.
 4. **목차**: 넓은 화면(≥ 1000px)은 왼쪽 사이드바(폭 약 260px, 따로 스크롤), 좁은 화면은 도구 막대의 [목차] 단추로 여닫는 위쪽 패널. `<nav aria-label="목차">` 안 `<ol>` 중첩 링크. `outline_source: "bookmarks"`면 그 목록(쪽으로 이동), `"none"`이면 불러온 쪽의 h1·h2 블록으로 만들고 쪽이 더 불러와질 때마다 덧붙인다(블록으로 이동). 둘 다 없으면 "목차가 없는 문서예요." 지금 보이는 쪽의 항목을 강조(`aria-current="true"`).
-5. **쪽 이동**: 도구 막대에 "쪽 [ n ] / 전체" 숫자 입력(Enter로 이동)과 [이전 쪽]·[다음 쪽]. 키보드 `PageUp`/`PageDown`은 브라우저 기본 스크롤을 그대로 둔다.
+5. **쪽 이동**: 도구 막대에 "쪽 [ n ] / 전체" 숫자 입력(Enter로 이동)과 [이전 쪽]·[다음 쪽]. 키보드 `PageUp`/`PageDown`은 브라우저 기본 스크롤을 그대로 둔다. (구현 후 변경 2026-11-19) 쪽 이동(숫자 입력·이전/다음·목차·모드 전환) 직후에는 이동한 쪽 번호를 고정한다(`pinPage`) — 문서 끝 쪽처럼 화면 맨 위까지 올릴 수 없는 쪽으로 가도 스크롤 위치로 센 "지금 쪽"이 앞쪽으로 되돌아가지 않는다. 사용자가 그 뒤 스크롤하면 다시 위치로 센다.
 6. **복사**: 글자는 선택·복사할 수 있다(`user-select` 막지 않음). 원본 배치에서 여러 줄을 선택하면 순서가 어긋날 수 있다는 안내를 도구 막대 도움말에 둔다 — 정확한 복사는 읽기 모드.
 7. **인쇄**: [인쇄] → `window.print()`. 모든 쪽을 불러오기 전에는 비활성("모두 불러온 뒤 인쇄할 수 있어요" 툴팁·`aria-disabled`). 인쇄 CSS: 도구 막대·목차 숨김, 쪽마다 새 종이(`break-before: page`), 원본 배치는 종이 폭에 맞춤.
 8. **다운로드**: 도구 막대에 [추출한 텍스트 다운로드하기] — §10.7과 같은 요청·이름·문구.
@@ -850,7 +881,9 @@ def export_file_name(file_name: str) -> str:
 | 기존 `long.pdf` · `ko.pdf` · `en.pdf` · `multi.pdf` | — | 표 0개(오탐 없음), 성능 측정 |
 | 기존 `encrypted.pdf` · `broken.pdf` · `fake.pdf` · `zero.pdf` · `big.pdf` · `pages301.pdf` | — | 두 경로 모두 `/api/extract`와 같은 오류 코드·상태 |
 | 실제 문서 (`--real`) `real_mime_en.pdf` | — | [실측] 책갈피 24개 → `outline` 24항목 |
-| 실제 안내서(60MB, 업로드 상한 초과) | `tools/check_layout.py`가 모듈을 **직접** 불러 쪽 범위로 | 1·11·25쪽 `-dataurls` 실패가 `figures_failed`로 처리되고 다른 쪽 그림은 나옴, 요청당 시간 기록 |
+| 실제 안내서(60MB, 업로드 상한 초과) | `tools/check_layout.py`가 모듈을 **직접** 불러 쪽 범위로 | 1·11·25쪽 `-dataurls` 실패가 `figures_failed`로 처리되고 다른 쪽 그림은 나옴, 요청당 시간 기록. (구현 후 변경 2026-11-19) `-dataurls`가 죽는 쪽은 `pdftocairo -svg`로 그림이 나오고, 그것도 실패할 때만 `figures_failed` |
+| (구현 후 변경 2026-11-19) `real_rpi_text.pdf` (`--real`) | 실제 안내서를 `-dFILTERIMAGE`로 그림을 뺀 290쪽 | 글자 많은 문서 성능 측정용. **그림이 없어 그림 많은 측정에는 쓰지 않는다** |
+| (제안 2026-11-19, 미결 U21) 실제 안내서 앞 40쪽 | 13.7MB, 그림 46개 | 4단계 QA가 `check_e2e --extra`로 따로 만들어 측정(§10.2 실측표). `make_test_pdfs --real`에 넣을지는 미결 |
 
 **3단계 — backend** (`tools/check_layout.py`, `tools/check_server.py`, 모델 0회)
 - [ ] 위 표의 기대 결과를 모듈 호출과 HTTP 둘 다로 확인.
@@ -874,7 +907,7 @@ def export_file_name(file_name: str) -> str:
 - [ ] 키보드만으로 두 버튼·보기 창 도구 막대·목차·쪽 이동을 쓸 수 있다. 인쇄 단추는 모두 불러오기 전 비활성.
 - [ ] 기존 `check_frontend.py` 항목이 모두 그대로 통과.
 
-**4단계 — 통합 (quality-assurance-engineer, 실제 `server.py` + 실제 화면, 모델 0회)**
+**4단계 — 통합 (quality-assurance-engineer, 실제 `server.py` + 실제 화면, 모델 0회 — 구현 후 변경 2026-11-19: 최종 확인용으로 실제 요약 1회 사용, `:free`, 8.9초)**
 - [ ] 위 시험 PDF 전부를 실제 화면에서 올려 보기 창·내려받기 결과를 확인(스크린샷을 원본 PDF 렌더(`pdftoppm`)와 나란히 저장해 사람이 비교).
 - [ ] 내려받은 `.html`을 **네트워크를 끊은 상태**(또는 CDP로 요청 차단·기록)에서 chromium·Firefox로 열어 표·그림·목차가 보이고, 요청 0회, `xss.pdf` 파일에서 스크립트가 실행되지 않음(콘솔·`alert` 없음), 목차 링크 이동, 인쇄 미리보기(`Page.printToPDF`)가 쪽마다 나뉨.
 - [ ] 한글 파일 이름으로 내려받은 파일이 실제 디스크에 그 이름으로 저장됨(chromium 내려받기 폴더 지정 — `Browser.setDownloadBehavior`).
@@ -884,8 +917,13 @@ def export_file_name(file_name: str) -> str:
 - [ ] 1~2단계 시험(`check_server`·`check_llm`·`check_frontend`·`check_e2e`·`check_firefox`) 전부 다시 통과.
 - [ ] 보기 창이 열린 채 메인 창을 닫아도 보기 창이 계속 동작하고, 메인 창이 닫힌 뒤 보기 창을 새로고침하면 `NO_SOURCE` 안내(메인 창이 같은 문서를 들고 있으면 다시 열림).
 
-**남은 수동 확인**: 화면 낭독기로 보기 창 읽기 순서, 실제 사용자가 원본 PDF와 나란히 보고 "비슷하다"고 느끼는지(표 감지 품질은 문서마다 다르다).
+- [ ] (구현 후 변경 2026-11-19) 보기 창을 닫거나 [다른 파일]을 누르면 서버가 그 요청을 멈추고(로그 `CLIENT_GONE`) 처리 자리를 즉시 놓는다. `./run.sh`를 Ctrl+C로 끝내면 서버가 끝난 뒤 종료코드 130.
+- [ ] (구현 후 변경 2026-11-19) 다운로드를 여러 번 연달아 눌러도 Chrome "여러 파일 자동 다운로드" 질문이 뜨지 않는다(클릭마다 시작 — 실제 `DownloadRequestLimiter`로 확인). Firefox에서 보기 창 File 전달·두 모드·연속 다운로드·받은 파일 열기·`xss.pdf` 통과.
+
+**4단계 결과 (2026-11-19)** (구현 후 변경 2026-11-19): 위 항목 모두 통과. 점검 스크립트(모두 실패 0, 메인 세션 재실행 2026-11-19): `check_layout --real` 157/157, `check_server` 267/267, `check_llm` 92/92, `check_frontend` 126/126, `check_viewer` 118/118, `check_e2e` 159/159(QA 보고 160 = 요약 90 + 보기·다운로드 70, 한 항목은 조건부), `check_firefox` 15/15. 성능은 §10.2 실측표. `check_layout`은 `pdftohtml` 등을 쓰는 다른 작업과 동시에 돌리면 "도구 임시 폴더가 남지 않음" 항목이 겹쳐 실패할 수 있다 — 단독으로 돌린다.
+
+**남은 수동 확인**: 화면 낭독기로 보기 창 읽기 순서, 실제 사용자가 원본 PDF와 나란히 보고 "비슷하다"고 느끼는지(표 감지 품질은 문서마다 다르다). (구현 후 변경 2026-11-19) 헤드풀(화면 있는) Chrome에서 눈으로 확인, 290쪽 글자 많은 문서의 렌더 부담(§10.2).
 
 ### 10.12 ai-integration-expert의 몫
 
-**없다.** 이 기능은 모델을 부르지 않으며 `llm.py`·프롬프트·요약 입력(`/api/extract`의 `text`)을 바꾸지 않는다. 3·4단계 동안 실제 모델 호출 예산은 0회다(무료 하루 50회 한도를 쓰지 않는다). 4단계 QA도 `--live`를 돌리지 않는다 — 요약 쪽 코드가 바뀌지 않았으므로 가짜 업스트림 시험으로 충분하다.
+**없다.** 이 기능은 모델을 부르지 않으며 `llm.py`·프롬프트·요약 입력(`/api/extract`의 `text`)을 바꾸지 않는다. 3·4단계 동안 실제 모델 호출 예산은 0회다(무료 하루 50회 한도를 쓰지 않는다). 4단계 QA도 `--live`를 돌리지 않는다 — 요약 쪽 코드가 바뀌지 않았으므로 가짜 업스트림 시험으로 충분하다. (구현 후 변경 2026-11-19) 실제로는 QA가 최종 확인용으로 실제 요약을 1회 불렀다(`:free`, 8.9초, 유료 0회).

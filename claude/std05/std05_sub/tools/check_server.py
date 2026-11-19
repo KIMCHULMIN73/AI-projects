@@ -21,6 +21,7 @@ import argparse
 import http.client
 import json
 import os
+import shutil
 import signal
 import socket
 import subprocess
@@ -861,6 +862,7 @@ def main() -> int:
         logs_text += run_variant_servers(c, args.port, pdfs, logs, scratch)
     except RuntimeError as exc:
         print(f"중단: {exc}", file=sys.stderr)
+        shutil.rmtree(scratch, ignore_errors=True)
         return 1
     check_logs(c, logs_text)
 
@@ -880,6 +882,7 @@ def main() -> int:
     c.ok(not suspicious, "시험 뒤 /tmp·앱 폴더의 새·바뀐 파일에 업로드 내용(표식) 없음", str(suspicious[:5]))
     print(f"  (참고: 시험 중 새로 생기거나 바뀐 파일 {len(new)}개 — 동시에 작업 중인 다른 프로그램 것 포함)")
 
+    shutil.rmtree(scratch, ignore_errors=True)   # 가짜 HOME·PATH 폴더(4단계 QA: 전에는 --pdfs 아래에 쌓였다)
     print(f"\n결과: 통과 {c.passed} · 실패 {len(c.failed)} · {time.monotonic() - t0:.1f}s · 서버 로그 {logs}")
     for f in c.failed:
         print(f"  실패: {f}")

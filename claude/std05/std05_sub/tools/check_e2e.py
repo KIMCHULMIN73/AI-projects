@@ -2,6 +2,8 @@
 """한눈 PDF 요약 — 통합 시험(실제 server.py + 실제 화면). 개발 전용(앱은 이 파일을 로드하지 않는다).
 
     python3 -B tools/check_e2e.py --out 저장소_밖_폴더                    # 가짜 업스트림, 실제 모델 호출 0회
+    python3 -B tools/check_e2e.py --out 저장소_밖_폴더 --part viewer      # 보기 창·내려받기 통합만(4단계)
+    python3 -B tools/check_e2e.py --out 저장소_밖_폴더 --part viewer --extra 그림많은.pdf   # 문서 더 시험
     python3 -B tools/check_e2e.py --out 저장소_밖_폴더 --live              # run.sh 실제 실행 + 실제 모델(ko.pdf 1건)
     python3 -B tools/check_e2e.py --out 저장소_밖_폴더 --live --docs ko.pdf,en.pdf
 
@@ -11,6 +13,9 @@
   - headless Chromium(CDP, tools/check_frontend.py의 Browser 재사용)으로 tools/make_test_pdfs.py의 PDF를
     파일 선택·드래그 앤 드롭으로 올려 추출 → 요약 → 결과 → 복사 → 다른 파일까지, 오류·장애·취소·보안·화면 크기를 본다.
   - 마지막에 run.sh 자체(이미 떠 있음·포트 점유·Ctrl+C·다이어리 8020과 동시 실행)를 가상 터미널로 시험한다.
+  - (4단계) 이어서 [추출한 텍스트 보기] 새 창(BroadcastChannel)·두 모드·목차·쪽 이동·인쇄·[다운로드], 받은 .html을
+    네트워크를 끊은 새 탭에서 열기, xss.pdf, 시험 PDF·실제 문서 전부, 오류 파일, Host·Origin, 요약 중 사용,
+    메인 창 닫기·새로고침, 화면 폭 4가지, LAYOUT_SLOTS BUSY(E2E_LAYOUT_DELAY로 처리를 늦춘 서버)를 본다(run_viewer).
 --live 모드: `NO_OPEN=1 ./run.sh`를 가상 터미널로 실제 실행(진짜 키)하고 --docs의 문서를 화면에서 실제로 요약한다.
   하루 한도(DAILY_LIMIT)를 만나면 멈춘다. 쓴 호출 수(결과의 '호출 N회')를 합쳐 찍는다.
 
@@ -21,6 +26,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import pty
@@ -120,8 +126,10 @@ class App:
         self.log_path = out / "server.log"
         self.log_path.write_text("")
 
-    def start(self, *, key: bool = True, path_env: str | None = None, home: str | None = None) -> None:
-        env = {k: v for k, v in os.environ.items() if k != "OPENROUTER_API_KEY"}
+    def start(self, *, key: bool = True, path_env: str | None = None, home: str | None = None,
+              extra_env: dict | None = None) -> None:
+        env = {k: v for k, v in os.environ.items() if k not in ("OPENROUTER_API_KEY", "E2E_LAYOUT_DELAY")}
+        env.update(extra_env or {})
         if key:
             env["OPENROUTER_API_KEY"] = FAKE_KEY
         if path_env is not None:
@@ -306,7 +314,7 @@ def ensure_pdfs(pdfs: Path) -> dict[str, Path]:
     pdfs.mkdir(parents=True, exist_ok=True)
     c = mk.Ctx(pdfs)
     try:
-        for name in mk.CASES:
+        for name in [*mk.CASES, *mk.LAYOUT_CASES]:
             if not (pdfs / name).is_file():
                 mk.make(c, name)
         for name in mk.REAL_CASES:
@@ -841,6 +849,564 @@ def run_live(out: Path, P: dict[str, Path], docs: list[str], max_calls: int) -> 
     print(f"\n실제 모델 호출 합계(이번 실행): {total_calls}회 (모두 :free)")
 
 
+# ── 보기 창·내려받기 통합 (SPEC §10.11 "4단계" — 4단계 QA가 더함) ─────────────
+# 실제 server.py(tools/e2e_app.py) + 실제 화면. 메인 창과 새로 열린 보기 창, 받은 파일을 연 탭을 브라우저 단위
+# CDP 하나로 다룬다(tools/check_viewer.py의 CDP·Page 재사용). 모델 호출 0회 — 요약은 가짜 업스트림.
+
+VIEW_INFO_JS = """(() => {
+  const q = (s) => document.querySelectorAll(s);
+  const t = (e) => (e ? e.textContent || '' : '').replace(/\\s+/g, ' ').trim();
+  return {
+    pages: q('section.pg').length, toc: q('#toc-list a').length, tables: q('#pages table').length,
+    imgs: q('#pages img').length, imgsOk: [...q('#pages img')].filter(i => i.complete && i.naturalWidth > 0).length,
+    badImg: [...q('#pages img')].filter(i => !/^data:image\\/(png|jpeg);base64,/.test(i.getAttribute('src') || '')).length,
+    omitted: q('#pages .omitted').length, h: ['h2', 'h3', 'h4'].map(s => q('#pages ' + s).length),
+    cells: [...q('#pages table')].slice(0, 1).flatMap(tb => [...tb.rows].map(r => [...r.cells].map(t))),
+    scripts: q('#pages script, #pages iframe, #pages object, #pages embed').length,
+    handlers: [...q('#pages *')].filter(e => [...e.attributes].some(a => /^on/i.test(a.name))).length,
+    xss: window.__xss ?? null, source: document.documentElement.dataset.source || '',
+    progress: t(document.getElementById('progress-text')), title: document.title,
+    text: t(document.getElementById('page-list')).slice(0, 4000),
+  };
+})()"""
+
+OFFLINE_INFO_JS = """(() => {
+  const q = (s) => document.querySelectorAll(s);
+  const ids = new Set([...q('[id]')].map(e => e.id));
+  const links = [...q('nav a')].map(a => a.getAttribute('href'));
+  return {
+    tables: q('table').length, imgs: q('img').length,
+    imgsOk: [...q('img')].filter(i => i.complete && i.naturalWidth > 0).length,
+    toc: links.length, tocMissing: links.filter(h => !h.startsWith('#') || !ids.has(h.slice(1))).length,
+    pages: q('section.page').length, scripts: q('script').length,
+    csp: (document.querySelector('meta[http-equiv="Content-Security-Policy"]') || {}).content || '',
+    xss: window.__xss ?? null, text: document.body.innerText.slice(0, 3000),
+  };
+})()"""
+
+VIEW_LOADED = "document.getElementById('progress-text').textContent.includes('모두 불러옴')"
+VIEW_FIRST = "!!document.querySelector('#page-list .paper, #page-list .flow')"
+MAIN_DOC = cf.V["doc"]
+
+
+def _pdf_pages(data: bytes) -> int:
+    return len(re.findall(rb"/Type\s*/Page[^s]", data))
+
+
+def _policy_browser_checks(vout: Path, struct: Path) -> None:
+    """CDP 내려받기 설정 없이(프로필 Preferences로 폴더만 지정) 띄운 Chromium에서 실제 팝업 차단기·내려받기 제한
+    (DownloadRequestLimiter — 사용자 동작 없는 두 번째 내려받기는 '여러 파일 다운로드' 허용을 묻고 그동안 막힌다)을 본다."""
+    import check_viewer as cv
+    from check_frontend import WS
+
+    dl = vout / "downloads-policy"
+    prof = vout / "chrome-profile-policy"
+    for d in (dl, prof):
+        shutil.rmtree(d, ignore_errors=True)
+    dl.mkdir()
+    (prof / "Default").mkdir(parents=True)
+    (prof / "Default" / "Preferences").write_text(json.dumps(
+        {"download": {"default_directory": str(dl), "prompt_for_download": False, "directory_upgrade": True}}))
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        port = so.getsockname()[1]
+    proc = subprocess.Popen([shutil.which("chromium") or shutil.which("chromium-browser"), "--headless=new",
+                             f"--remote-debugging-port={port}", f"--user-data-dir={prof}", "--no-first-run",
+                             "--no-default-browser-check", "--window-size=1280,900", "about:blank"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    class _CDP(cv.CDP):
+        def __init__(self):   # 이미 띄운 브라우저에 붙기만 한다
+            url = None
+            for _ in range(150):
+                try:
+                    url = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=1))["webSocketDebuggerUrl"]
+                    break
+                except Exception:  # noqa: BLE001
+                    time.sleep(0.2)
+            self.proc, self.ws, self.id, self.events = proc, WS(url), 0, []
+            self.ws.sock.settimeout(60)
+            self.call("Target.setDiscoverTargets", discover=True)
+
+    def files() -> list[str]:
+        return sorted(p.name for p in dl.iterdir() if not p.name.endswith(".crdownload"))
+
+    def wait_files(n: int, timeout: float = 8) -> list[str]:
+        end = time.time() + timeout
+        while time.time() < end and len(files()) < n:
+            time.sleep(0.1)
+        time.sleep(0.3)
+        return files()
+
+    cdp = _CDP()
+    try:
+        m = cv.Page(cdp, cdp.pages()[0]["targetId"], "policy")
+        m.goto(BASE, READY)
+        m.set_files([str(struct)])
+        m.wait(cf.V["doc"], 10)
+        before = cv.page_ids(cdp)
+        m.js("document.getElementById('view-text-button').click()")      # 사용자 동작 없이 → 실제 팝업 차단
+        time.sleep(1.0)
+        blocked = not cv.page_ids(cdp) - before and "새 창이 막혔어요" in cv.text(m, "#doc-tools-error")
+        m.click("#doc-tools-error a")
+        v = cv.new_viewer(cdp, before)
+        got = v is not None and v.wait(VIEW_LOADED, 15) and v.js("[document.documentElement.dataset.source, window.opener === null]") == ["file", True]
+        check("실제 팝업 차단(사용자 동작 없는 열기) → '새 창이 막혔어요' + 링크, 링크(noopener)로 연 창도 문서를 받음", blocked and got, (blocked, got))
+        if v:
+            v.close()
+        m.click("#download-text-button")
+        a = wait_files(1)
+        m.js("document.getElementById('download-text-button').focus()")
+        m.key("Enter", "Enter", 13, "\r")
+        b = wait_files(2)
+        m.click("#download-text-button")
+        c = wait_files(3)
+        check("실제 내려받기 제한: 클릭·Enter·클릭으로 세 번 연달아 → 세 파일 모두 저장(허용 질문 없음)", len(c) == 3, (a, b, c))
+        m.js("document.getElementById('download-text-button').click()")   # 사용자 동작 없이 → 제한에 걸림(기록용)
+        d = wait_files(4, 4)
+        check("(대조) 사용자 동작 없이 시작한 네 번째 내려받기는 브라우저가 붙잡음 — 앱은 항상 클릭으로 시작하므로 해당 없음",
+              len(d) == 3, d)
+    finally:
+        try:
+            cdp.call("Browser.close")
+            proc.wait(10)
+        except Exception:  # noqa: BLE001
+            pass
+        stop(proc)
+        shutil.rmtree(prof, ignore_errors=True)
+
+
+def run_viewer(out: Path, P: dict[str, Path], extra: list[Path]) -> dict:
+    """보기·내려받기 통합. 돌려주는 값: 문서별 측정(보고용, out/viewer/report.json에도 씀)."""
+    import concurrent.futures as cfut
+
+    import check_viewer as cv   # 브라우저 단위 CDP·Page — 같은 tools/ 안
+
+    vout = out / "viewer"
+    shutil.rmtree(vout, ignore_errors=True)
+    vout.mkdir(parents=True)
+    cv.OUT = vout
+    dl = vout / "downloads"
+    dl.mkdir()
+    report: dict = {}
+    tmp_before = {p.name for p in Path(tempfile.gettempdir()).iterdir()}
+    started = time.time()
+    upstream = subprocess.Popen([sys.executable, "-B", str(TOOLS / "fake_upstream.py"), str(UP_PORT)],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    app = App(vout)
+    cdp = None
+    pages: list = []
+    data = P["struct.pdf"].read_bytes()
+
+    def attach(target_id: str, label: str):
+        pg = cv.Page(cdp, target_id, label)
+        pages.append(pg)
+        return pg
+
+    def new_main():
+        m = attach(cdp.call("Target.createTarget", url="about:blank")["targetId"], "main")
+        m.viewport(1280)
+        m.goto(BASE, READY)
+        return m
+
+    def upload_main(m, path: Path, timeout: float = 30) -> bool:
+        """파일을 올리고 **그 파일의** 추출 응답이 끝날 때까지(앞 문서 카드가 보이는 채로 돌아오지 않게)."""
+        n = "performance.getEntriesByName(location.origin + '/api/extract').length"
+        n0 = m.js(n)
+        m.set_files([str(path)])
+        return bool(m.wait(f"{n} > {n0} && !({cf.V['progress']}) && ({MAIN_DOC} || {cf.V['error']})", timeout))
+
+    def open_view(m, timeout: float = 120):
+        before = cv.page_ids(cdp)
+        t0 = time.monotonic()
+        m.click("#view-text-button")
+        end = time.time() + 8
+        v = None
+        while v is None and time.time() < end:
+            for t in cdp.pages():
+                if t["targetId"] not in before and "viewer.html" in t["url"]:
+                    v = attach(t["targetId"], "viewer")
+                    break
+            else:
+                time.sleep(0.05)
+        if v is None:
+            return None, None, None
+        first = all_t = None
+        if v.wait(VIEW_FIRST, 30):
+            first = time.monotonic() - t0
+        if v.wait(VIEW_LOADED, timeout):
+            all_t = time.monotonic() - t0
+        return v, first, all_t
+
+    def close(pg) -> None:
+        pg.close()
+        if pg in pages:
+            pages.remove(pg)
+
+    def download(pg, button: str, timeout: float = 120):
+        n0 = len(cdp.events)
+        t0 = time.monotonic()
+        pg.click(button)
+        got = cv.downloads_since(cdp, n0, timeout)
+        dt = time.monotonic() - t0
+        if not got:
+            return None, dt
+        f = dl / got[-1]["name"]
+        end = time.time() + 5
+        while not f.is_file() and time.time() < end:
+            time.sleep(0.1)
+        return (f if f.is_file() else None), dt
+
+    def open_offline(path: Path):
+        """받은 파일을 네트워크를 끊은 새 탭에서 연다 → (탭, 파일 밖 요청 목록, 대화상자 이벤트)."""
+        pg = attach(cdp.call("Target.createTarget", url="about:blank")["targetId"], "offline")
+        pg.call("Network.enable")
+        pg.call("Network.emulateNetworkConditions", offline=True, latency=0, downloadThroughput=-1, uploadThroughput=-1)
+        n0 = len(cdp.events)
+        pg.goto(path.as_uri())
+        time.sleep(0.5)
+        cdp.pump()
+        mine = [e for e in cdp.events[n0:] if e.get("sessionId") == pg.s]
+        reqs = [e["params"]["request"]["url"] for e in mine if e["method"] == "Network.requestWillBeSent"]
+        reqs = [u for u in reqs if not u.startswith("data:") and u != path.as_uri()]
+        dialogs = [e for e in mine if e["method"] == "Page.javascriptDialogOpening"]
+        return pg, reqs, dialogs
+
+    try:
+        if not wait_port(UP_PORT, True, 5):
+            raise RuntimeError("가짜 업스트림이 뜨지 않았다")
+        app.start()
+        cdp = cv.CDP()
+        cdp.call("Browser.setDownloadBehavior", behavior="allow", downloadPath=str(dl), eventsEnabled=True)
+        main = attach(cdp.pages()[0]["targetId"], "main")
+        main.viewport(1280)
+        main.goto(BASE, READY)
+
+        # ── struct.pdf: 보기 창 전체 흐름 ──
+        check("보기(struct): 실제 서버에서 추출 → 문서 카드에 두 버튼", upload_main(main, P["struct.pdf"])
+              and main.js("!document.getElementById('view-text-button').disabled && !document.getElementById('download-text-button').disabled"))
+        v, first, all_t = open_view(main)
+        info = v.js(VIEW_INFO_JS) if v else {}
+        check("보기(struct): 새 창이 열리고 BroadcastChannel로 File을 받음(data-source=file)",
+              v is not None and info.get("source") == "file", info.get("source"))
+        check(f"보기(struct): 2쪽 모두 불러옴 — 첫 쪽 {first or -1:.2f}s·전체 {all_t or -1:.2f}s (목표 첫 쪽 2초)",
+              all_t is not None and info.get("pages") == 2 and first is not None and first < 2.0, (first, all_t, info.get("progress")))
+        check("보기(struct): 목차 4항목(책갈피)·표 1개(3×3, 셀 글자 일치)·그림 1개(data URI, 그려짐)",
+              info.get("toc") == 4 and info.get("tables") == 1 and info.get("cells") == mk.LAYOUT_CASES["struct.pdf"]["expect"]["table"]
+              and info.get("imgs") == 1 and info.get("imgsOk") == 1 and info.get("badImg") == 0,
+              {k: info.get(k) for k in ("toc", "tables", "cells", "imgs", "imgsOk")})
+        check("보기(struct): 문서 h1~h3이 h2·h3·h4로, 창 제목 '… — 추출한 텍스트 보기'",
+              all(n >= 1 for n in info.get("h", [0, 0, 0])) and info.get("title", "").endswith("— 추출한 텍스트 보기"),
+              (info.get("h"), info.get("title")))
+        report["struct.pdf"] = {"first": first, "all": all_t, "pages": info.get("pages"), "tables": info.get("tables"),
+                                "imgs": info.get("imgs"), "toc": info.get("toc")}
+        if v:
+            v.shot("struct-1280-original", full=True)
+            subprocess.run(["pdftoppm", "-png", "-r", "60", "-f", "1", "-l", "1", str(P["struct.pdf"]), "struct-원본"],
+                           check=False, cwd=str(vout))
+            v.click("#mode-reading")
+            r = v.js("[document.getElementById('mode-reading').getAttribute('aria-pressed'), document.querySelectorAll('#page-list .flow').length,"
+                     " document.querySelectorAll('#pages table').length, document.querySelectorAll('#pages img').length]")
+            check("보기: [읽기 모드] → aria-pressed, 흐름 배치 2쪽, 표·그림 유지", r == ["true", 2, 1, 1], r)
+            v.shot("struct-1280-reading", full=True)
+            v.click("#next-page")
+            p2 = v.wait("document.getElementById('page-input').value === '2'", 3)
+            v.click("#prev-page")
+            p1 = v.wait("document.getElementById('page-input').value === '1'", 3)
+            v.js("(() => { const i = document.getElementById('page-input'); i.focus(); i.select(); })()")
+            v.type_text("2")
+            v.key("Enter", "Enter", 13, "\r")
+            p2b = v.wait("document.getElementById('page-input').value === '2' && document.activeElement.id === 'p2'", 3)
+            check("보기: [다음 쪽]·[이전 쪽]·쪽 번호 입력+Enter로 이동(포커스가 그 쪽으로)", p2 and p1 and p2b,
+                  (p2, p1, p2b, v.js("document.activeElement.id")))
+            v.click("#mode-original")
+            v.js("window.scrollTo(0, 0)")
+            link = v.js("(() => { const a = [...document.querySelectorAll('#toc-list a')].find(a => a.dataset.page === '2');"
+                        " if (!a) return null; a.id = '__toc2'; return a.textContent; })()")
+            ok_link = False
+            if link:
+                v.click("#__toc2")
+                ok_link = v.wait("document.getElementById('page-input').value === '2' && location.hash.startsWith('#doc=')", 3)
+            check("보기: 목차 항목(2쪽)을 누르면 그 쪽으로, 주소의 #doc= 유지", ok_link, link)
+            pr = v.js("document.getElementById('print-button').getAttribute('aria-disabled')")
+            pdf = base64.b64decode(v.call("Page.printToPDF", printBackground=True)["data"])
+            (vout / "struct-viewer-print.pdf").write_bytes(pdf)
+            check("보기: 모두 불러온 뒤 [인쇄] 활성, 인쇄(printToPDF)가 쪽마다 새 종이(2장 이상)",
+                  pr == "false" and _pdf_pages(pdf) >= 2, (pr, _pdf_pages(pdf)))
+            v.js("document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0)")
+            seen = [v.tab() for _ in range(16)]
+            want = {"mode-original", "mode-reading", "prev-page", "page-input", "next-page", "print-button", "download-button"}
+            check("보기 키보드: Tab으로 도구 막대 단추 전부(원본·읽기·이전·쪽 입력·다음·인쇄·내려받기)에 닿음", want <= set(seen), seen)
+            f, dt = download(v, "#download-button")
+            status = cv.text(v, "#download-status")
+            check(f"보기 창 [추출한 텍스트 다운로드하기] → struct_추출.html 저장({dt:.2f}s, 목표 3초)·완료 문구",
+                  f is not None and f.name == "struct_추출.html" and dt < 3 and "struct_추출.html을(를) 내려받았어요." in status,
+                  (f, round(dt, 2), status))
+            report["struct.pdf"].update({"dl_s": round(dt, 2), "dl_bytes": f.stat().st_size if f else 0})
+            if f:
+                body = f.read_text(encoding="utf-8")
+                check("받은 파일: <script 0개·외부 URL 0개·CSP 메타·표·그림·목차",
+                      "<script" not in body.lower() and not re.search(r"(?:src|href)=\"(?:https?:)?//", body)
+                      and "Content-Security-Policy" in body and "<table" in body and 'src="data:image/png;base64,' in body
+                      and '<nav aria-label="목차">' in body, len(body))
+                op, reqs, _ = open_offline(f)
+                oi = op.js(OFFLINE_INFO_JS)
+                check("받은 파일을 오프라인 새 탭에서: 요청 0회, 표 1·그림 1(그려짐)·목차 4(링크 대상 모두 있음)·스크립트 0",
+                      not reqs and oi["tables"] == 1 and oi["imgs"] == 1 and oi["imgsOk"] == 1 and oi["toc"] == 4
+                      and oi["tocMissing"] == 0 and oi["scripts"] == 0, (reqs, {k: oi[k] for k in oi if k != "text"}))
+                op.js("document.querySelector('nav a[href=\"#p2\"]').id = '__l2'")
+                op.click("#__l2")
+                check("받은 파일: 목차 링크로 2쪽 이동(#p2)", op.wait("location.hash === '#p2'", 3), op.js("location.hash"))
+                pdf = base64.b64decode(op.call("Page.printToPDF", printBackground=False)["data"])
+                (vout / "struct-download-print.pdf").write_bytes(pdf)
+                check("받은 파일: 인쇄(printToPDF)가 쪽마다 새 종이(머리말·목차 + 2쪽 → 3장 이상)", _pdf_pages(pdf) >= 3, _pdf_pages(pdf))
+                op.shot("struct-download-1280", full=True)
+                close(op)
+
+        # ── 메인 창 [다운로드] 연속(클릭마다) ──
+        # (CDP 내려받기 'allow'는 같은 이름이면 덮어쓴다 — 그래서 파일 수가 아니라 끝난 내려받기 이벤트로 센다)
+        f1, _ = download(main, "#download-text-button")
+        m1 = f1.stat().st_mtime_ns if f1 else 0
+        f2, _ = download(main, "#download-text-button")
+        check("메인 창 [다운로드]를 연달아 두 번(클릭마다) → 두 번 모두 저장(허용 질문·차단 없음)",
+              f1 is not None and f2 is not None and f2.stat().st_mtime_ns >= m1, (f1, f2))
+
+        upload_main(main, P["한글 이름 파일.pdf"])
+        f, _ = download(main, "#download-text-button")
+        check("한글 이름 파일.pdf → 디스크에 '한글 이름 파일_추출.html' 그대로 저장",
+              f is not None and f.name == "한글 이름 파일_추출.html", f)
+
+        # ── xss.pdf: 두 모드·받은 파일 모두 실행 0 ──
+        upload_main(main, P["xss.pdf"])
+        v, _, _ = open_view(main)
+        xi = v.js(VIEW_INFO_JS) if v else {}
+        if v:
+            v.click("#mode-reading")
+        xr = v.js(VIEW_INFO_JS) if v else {}
+        dialogs = [e for e in cdp.events if e["method"] == "Page.javascriptDialogOpening"]
+        check("xss.pdf 보기 창(원본·읽기): 글자 그대로 보이고 스크립트·on* 속성 0, 실행 0(alert 없음)",
+              v is not None and all(i.get("scripts") == 0 and i.get("handlers") == 0 and i.get("xss") is None
+                                    and "<script>alert(1)</script>" in i.get("text", "")
+                                    and "<img src=x onerror=alert(1)>" in i.get("text", "") for i in (xi, xr)) and not dialogs,
+              (xi.get("scripts"), xi.get("handlers"), xi.get("text", "")[:200]))
+        f, _ = download(v, "#download-button") if v else (None, 0)
+        if f:
+            body = f.read_text(encoding="utf-8")
+            op, reqs, dialogs = open_offline(f)
+            oi = op.js(OFFLINE_INFO_JS)
+            check("xss.pdf 받은 파일: <script 0·&lt;script&gt;로 이스케이프·CSP default-src 'none', 열어도 실행 0·요청 0",
+                  "<script" not in body.lower() and "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+                  and "default-src 'none'" in oi["csp"] and "script-src" not in oi["csp"] and oi["scripts"] == 0
+                  and oi["xss"] is None and not dialogs and not reqs and "<script>alert(1)</script>" in oi["text"],
+                  (reqs, dialogs, oi["csp"]))
+            close(op)
+        else:
+            check("xss.pdf 받은 파일 저장", False)
+        if v:
+            close(v)
+        sys.path.insert(0, str(APP_DIR))
+        import pdf_layout as PL   # 서버가 만든 값이 아닌 그림 주소는 HTML에 들어가지 않는다(이중 장치)
+        assert Path(PL.__file__).resolve().parent == APP_DIR
+        bad = PL._block_html({"type": "figure", "id": "p1-b0", "x": 0, "y": 0, "w": 10, "h": 10,
+                              "src": "javascript:alert(1)", "text": "", "omitted": None}, 1, 1)
+        check("내려받기 HTML: javascript: 그림 주소는 <img>가 되지 않고 '그림 생략'", "javascript" not in bad and "<img" not in bad, bad)
+
+        # ── 시험 PDF·실제 문서: 보기·내려받기·받은 파일 오프라인 ──
+        cases = ["struct_noout.pdf", "twocol.pdf", "figs.pdf", "landscape.pdf", "rotated.pdf", "mixed.pdf", "pages300.pdf",
+                 "long.pdf", "ko.pdf", "en.pdf", "multi.pdf"]
+        cases += [n for n in ("real_mime_en.pdf", "real_xz_ko.pdf", "real_mkvmerge_ko.pdf", "real_rpi_text.pdf") if n in P]
+        for path in [P[n] for n in cases] + extra:
+            name = path.name
+            ok_up = upload_main(main, path, 60)
+            v, first, all_t = open_view(main, 240)
+            info = v.js(VIEW_INFO_JS) if v else {}
+            heap = None
+            if v:
+                try:
+                    v.call("Performance.enable")
+                    heap = {m["name"]: m["value"] for m in v.call("Performance.getMetrics")["metrics"]}.get("JSHeapUsedSize")
+                except RuntimeError:
+                    heap = None
+                v.shot(f"{path.stem}-1280-original")
+            f, dt = download(v, "#download-button", 240) if v else (None, 0)
+            size = f.stat().st_size if f else 0
+            oi = {}
+            if f:
+                op, reqs, _ = open_offline(f)
+                oi = op.js(OFFLINE_INFO_JS)
+                oi["reqs"] = len(reqs)
+                close(op)
+            errs = v.errors() if v else ["보기 창 없음"]
+            report[name] = {"first": first, "all": all_t, "pages": info.get("pages"), "tables": info.get("tables"),
+                            "imgs": info.get("imgs"), "omitted": info.get("omitted"), "toc": info.get("toc"),
+                            "dl_s": round(dt, 2), "dl_bytes": size, "heap_mb": round(heap / 1e6, 1) if heap else None,
+                            "offline": {k: oi.get(k) for k in ("tables", "imgs", "imgsOk", "toc", "tocMissing", "reqs", "scripts")}}
+            ok = (ok_up and v is not None and all_t is not None and f is not None and oi.get("reqs") == 0
+                  and oi.get("scripts") == 0 and oi.get("tocMissing") == 0 and oi.get("imgsOk") == oi.get("imgs") and not errs)
+            exp = mk.LAYOUT_CASES.get(name, {}).get("expect", {})
+            if "tables" in exp:
+                ok = ok and info.get("tables") == exp["tables"] and oi.get("tables") == exp["tables"]
+            if "pages" in exp:
+                ok = ok and info.get("pages") == exp["pages"]
+            if name == "struct_noout.pdf":    # 책갈피가 없으면 h1·h2로 만든 목차
+                ok = ok and info.get("toc", 0) >= 2 and oi.get("toc", 0) >= 2
+            if name == "figs.pdf":            # 쪽당 30개 넘는 그림은 생략 안내
+                ok = ok and info.get("omitted", 0) >= 10 and info.get("imgs", 0) >= 30
+            if name == "mixed.pdf":           # 스캔한 쪽이 그림 하나로
+                ok = ok and info.get("imgs", 0) >= 1
+            if name == "real_mime_en.pdf":    # 책갈피 24개
+                ok = ok and info.get("toc") == 24
+            check(f"보기·내려받기 {name}: {info.get('pages')}쪽, 첫 쪽 {first or -1:.1f}s·전체 {all_t or -1:.1f}s, "
+                  f"받기 {dt:.1f}s·{size // 1024}KB, 받은 파일 오프라인 요청 0·스크립트 0", ok, (report[name], errs[:3]))
+            if v:
+                close(v)
+        r = report.get("long.pdf", {})
+        check("성능 long.pdf(78쪽, SPEC §10.2): 첫 5쪽 3초·전체 30초·내려받기 20초 안",
+              (r.get("first") or 99) < 3 and (r.get("all") or 99) < 30 and (r.get("dl_s") or 99) < 20, r)
+
+        # ── 오류 파일: 두 새 경로는 /api/extract와 같은 코드·상태 ──
+        for name, want in (("encrypted.pdf", "ENCRYPTED"), ("broken.pdf", "BROKEN_PDF"), ("fake.pdf", "NOT_PDF"),
+                           ("zero.pdf", "EMPTY_FILE"), ("big.pdf", "FILE_TOO_LARGE"), ("pages301.pdf", "TOO_LONG")):
+            body = P[name].read_bytes()
+            codes = []
+            for route in ("/api/extract", "/api/layout", "/api/export"):
+                st, _, b = http("POST", BASE.rstrip("/") + route, body, {"Content-Type": "application/pdf"}, timeout=60)
+                try:
+                    codes.append((st, json.loads(b)["error"]["code"]))
+                except (ValueError, KeyError, TypeError):
+                    codes.append((st, None))
+            check(f"오류 {name}: extract·layout·export 모두 {want}(같은 상태)", len(set(codes)) == 1 and codes[0][1] == want, codes)
+        st, _, b = http("POST", BASE + "api/layout", P["scan.pdf"].read_bytes(), {"Content-Type": "application/pdf"}, timeout=60)
+        check("scan.pdf: /api/layout은 NO_TEXT를 내지 않고 200(쪽이 그림으로)", st == 200 and b'"type": "figure"' in b, st)
+        upload_main(main, P["scan.pdf"])
+        check("scan.pdf 화면: 추출 오류(NO_TEXT) — 보기·내려받기 버튼이 보이지 않음(미결 U16 기본값)",
+              main.js(cf.V["error"]) and not main.js(MAIN_DOC), cv.text(main, "#error-text"))
+
+        # ── Host·Origin(실제 서버) ──
+        for route in ("/api/layout", "/api/export"):
+            res = [http("POST", BASE.rstrip("/") + route, data, {"Content-Type": "application/pdf", **h})[0]
+                   for h in ({"Host": "evil.example:8030"}, {"Origin": "http://evil.example"}, {"Origin": "null"},
+                             {"Host": "localhost:8030", "Origin": "http://localhost:8030"})]
+            check(f"{route}: 다른 Host 403·다른 Origin 403·Origin null 403·localhost 같은 출처 200", res == [403, 403, 403, 200], res)
+
+        # ── 요청자가 떠나면 서버도 멈춤(자리를 붙잡지 않음) ──
+        n_gone = app.count("CLIENT_GONE")
+        try:
+            http("POST", BASE + "api/export", P["pages300.pdf"].read_bytes(), {"Content-Type": "application/pdf"}, timeout=0.4)
+        except Exception:  # noqa: BLE001 — 일부러 기다리지 않고 끊는다
+            pass
+        end = time.time() + 10
+        while time.time() < end and app.count("CLIENT_GONE") == n_gone:
+            time.sleep(0.1)
+        gone = [ln for ln in app.log().splitlines() if "/api/export" in ln and "CLIENT_GONE" in ln]
+        check("내려받기 도중 요청자가 끊으면 서버가 남은 쪽을 만들지 않고 멈춤(로그 CLIENT_GONE, 처리 자리 반환)",
+              gone and http("POST", BASE + "api/layout", data, {"Content-Type": "application/pdf"})[0] == 200, gone[-1:])
+
+        # ── 요약 중에 보기·내려받기 ──
+        upload_main(main, P["ko.pdf"])
+        up_ctl("/__ctl/reset", {})
+        up_script([{"ok": True, "delay": 4}])
+        main.click("#summarize-button")
+        v, _, all_t = open_view(main, 30)
+        f, _ = download(main, "#download-text-button", 30)
+        done = main.wait(cf.V["result"], 20)
+        check("요약 중에 보기 창·다운로드 → 둘 다 되고 요약도 정상 결과(업스트림 1회)",
+              v is not None and all_t is not None and f is not None and done and len(up_log()) == 1,
+              (all_t, f, len(up_log())))
+
+        # ── 보기 창 새로고침·메인 창 닫기 ──
+        if v:
+            v.call("Page.reload")
+            check("메인 창이 같은 문서를 들고 있으면 보기 창 새로고침 → 다시 열림", v.wait(VIEW_LOADED, 20))
+            close(main)
+            time.sleep(0.5)
+            v.click("#mode-reading")
+            f, _ = download(v, "#download-button", 30)
+            check("메인 창을 닫은 뒤에도 보기 창의 모드 전환·다운로드 동작",
+                  f is not None and v.js("document.getElementById('mode-reading').getAttribute('aria-pressed')") == "true")
+            v.call("Page.reload")
+            ns = v.wait("!document.getElementById('reconnect-button').hidden", 8)
+            check("메인 창이 닫힌 뒤 보기 창 새로고침 → NO_SOURCE 안내 + [다시 연결]",
+                  ns and "원래 창" in cv.text(v, "#state-text"), cv.text(v, "#state-text"))
+            close(v)
+        main = new_main()
+
+        # ── 보기 창 화면 크기·키보드 ──
+        upload_main(main, P["struct.pdf"])
+        v, _, _ = open_view(main)
+        if v:
+            for w in (1280, 700, 480, 360):
+                v.viewport(w, 900)
+                for mode in ("original", "reading"):
+                    v.click(f"#mode-{mode}")
+                    time.sleep(0.3)
+                    ov = cv.overflow(v)
+                    v.shot(f"struct-{w}-{mode}")
+                    check(f"보기 창 {w}px {mode}: 가로 넘침 없음", ov["scroll"] <= ov["client"] and not ov["wide"], ov)
+            v.viewport(480, 900)
+            v.js("window.scrollTo(0, 0)")
+            v.click("#toc-toggle")
+            opened = v.wait("!document.getElementById('toc').hidden && !!document.activeElement.closest('#toc-list')", 3)
+            v.key("Escape", "Escape", 27)
+            closed = v.wait("document.getElementById('toc').hidden && document.activeElement.id === 'toc-toggle'", 3)
+            check("보기 창 480px: [목차]를 열면 첫 항목에 포커스, Esc로 닫고 [목차]로 돌아옴", opened and closed, (opened, closed))
+            close(v)
+        _policy_browser_checks(vout, P["struct.pdf"])
+        errs = [f"{pg.label}: {e}" for pg in pages for e in pg.errors()]
+        check("열린 창 콘솔 오류·경고 0건(의도한 4xx 네트워크 기록 제외)", not errs, errs[:5])
+
+        # ── LAYOUT_SLOTS(2) BUSY: 보기·내려받기 처리를 12초 늦춘 실제 서버 ──
+        app.stop()
+        app.start(extra_env={"E2E_LAYOUT_DELAY": "12"})
+        t0 = time.monotonic()
+
+        def post_export(_i):
+            st, _, b = http("POST", BASE + "api/export", data, {"Content-Type": "application/pdf"}, timeout=60)
+            return st, time.monotonic() - t0, b[:200]
+
+        with cfut.ThreadPoolExecutor(4) as ex:
+            futs = [ex.submit(post_export, i) for i in range(3)]
+            time.sleep(0.5)
+            st_sum, _, _ = http("POST", BASE + "api/summarize", json.dumps({"text": "가나다라 " * 60, "meta": {}}).encode(),
+                                {"Content-Type": "application/json"}, timeout=30)
+            res = sorted((r.result() for r in futs), key=lambda r: r[0])
+        busy = [r for r in res if r[0] == 409]
+        check("LAYOUT_SLOTS(2): 동시 3건 → 2건 200, 1건 약 10초 뒤 409 BUSY / 그동안 요약 요청은 200",
+              [r[0] for r in res] == [200, 200, 409] and busy and 9 <= busy[0][1] <= 13 and b'"BUSY"' in busy[0][2]
+              and st_sum == 200, ([(r[0], round(r[1], 1)) for r in res], st_sum))
+        main.goto(BASE, READY)
+        upload_main(main, P["struct.pdf"])
+        with cfut.ThreadPoolExecutor(2) as ex:
+            t0 = time.monotonic()
+            hogs = [ex.submit(post_export, i) for i in range(2)]
+            time.sleep(0.5)
+            main.click("#download-text-button")
+            shown = main.wait("!document.getElementById('doc-tools-error').hidden", 15)
+            msg = cv.text(main, "#doc-tools-error")
+            [h.result() for h in hogs]
+        check("화면: 처리 자리가 없을 때 [다운로드] → '다른 창에서 문서를 읽고 있어요' 문구, 문서 카드는 그대로",
+              shown and "다른 창에서 문서를 읽고 있어요" in msg and main.js(MAIN_DOC), msg)
+    finally:
+        if cdp:
+            cdp.close()
+        app.stop()
+        stop(upstream)
+
+    log = app.log()
+    leaks = [w for w in ("도시 텃밭", "struct.pdf", "한글 이름", "alert(1)", "구조 시험", "두 번째 장", "Traceback") if w in log]
+    check("서버 로그에 문서 글자·파일 이름·책갈피·트레이스백 없음, STRAY_FILES 없음", not leaks and "STRAY_FILES" not in log, leaks)
+    left = sorted({p.name for p in Path(tempfile.gettempdir()).iterdir()} - tmp_before)
+    left = [n for n in left if n.startswith(("pdf-layout-", "tmp"))]
+    check("/tmp에 도구 임시 폴더(pdf-layout-*)·임시 파일이 남지 않음", not left, left)
+    st = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all", "."], cwd=str(APP_DIR),
+                        capture_output=True, text=True).stdout
+    new_files = [ln for ln in st.splitlines() if ln.startswith("??")]
+    check("앱 폴더에 추적 안 된 새 파일 없음(git status)", not new_files, new_files)
+    report["_elapsed_s"] = round(time.time() - started)
+    (vout / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=1, default=str))
+    return report
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True, help="스크린샷·로그·시험 PDF를 둘 저장소 밖 폴더")
@@ -848,6 +1414,9 @@ def main() -> int:
     ap.add_argument("--live", action="store_true", help="run.sh + 실제 모델 호출")
     ap.add_argument("--docs", default="ko.pdf", help="--live에서 요약할 문서(쉼표)")
     ap.add_argument("--max-calls", type=int, default=6, help="--live 이번 실행의 실제 호출 상한(넘으면 남은 문서를 건너뜀)")
+    ap.add_argument("--part", choices=("all", "summary", "viewer"), default="all",
+                    help="기본 모드에서 돌릴 부분: 요약 흐름(summary)·보기·내려받기(viewer)·둘 다(all)")
+    ap.add_argument("--extra", default="", help="보기·내려받기에서 더 시험할 PDF 경로(쉼표, 예: 그림 많은 실제 문서)")
     a = ap.parse_args()
     out = Path(a.out).expanduser().resolve()
     if mk._inside_repo(out):
@@ -858,12 +1427,21 @@ def main() -> int:
         if port_busy(p):
             print(f"포트 {p}이 이미 쓰이고 있습니다. 끄고 다시 실행하세요.")
             return 2
-    P = ensure_pdfs(Path(a.pdfs).expanduser() if a.pdfs else out / "pdfs")
+    P = ensure_pdfs(Path(a.pdfs).expanduser().resolve() if a.pdfs else out / "pdfs")   # 브라우저는 ".."이 든 경로를 못 읽는다
     t0 = time.monotonic()
     if a.live:
         run_live(out, P, [d.strip() for d in a.docs.split(",") if d.strip()], a.max_calls)
     else:
-        run_fake(out, P)
+        if a.part in ("all", "summary"):
+            run_fake(out, P)
+        if a.part in ("all", "viewer"):
+            rep = run_viewer(out, P, [Path(x).expanduser().resolve() for x in a.extra.split(",") if x.strip()])
+            print("\n보기·내려받기 측정(첫 쪽·전체·받기 초, 크기):")
+            for name, r in rep.items():
+                if isinstance(r, dict):
+                    print(f"  {name}: 쪽 {r.get('pages')} · 표 {r.get('tables')} · 그림 {r.get('imgs')} · 목차 {r.get('toc')} · "
+                          f"첫 쪽 {r.get('first') or 0:.2f}s · 전체 {r.get('all') or 0:.2f}s · 받기 {r.get('dl_s') or 0}s "
+                          f"{(r.get('dl_bytes') or 0) // 1024}KB · JS 힙 {r.get('heap_mb')}MB")
     passed = sum(ok for _, ok, _ in results)
     print("\n" + "=" * 60)
     print(f"통합 점검 {passed}/{len(results)} 통과 · {time.monotonic() - t0:.0f}s · 스크린샷·로그: {out}"

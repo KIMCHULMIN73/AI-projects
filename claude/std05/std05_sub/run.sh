@@ -80,7 +80,16 @@ fi
 python3 -B server.py &
 SERVER_PID=$!
 # Ctrl+C·kill·터미널 닫힘 어느 경우든 서버를 함께 끈다(서버는 SIGTERM을 받으면 정리하고 끝난다).
-trap 'kill "$SERVER_PID" 2>/dev/null || true' INT TERM HUP EXIT
+# 서버가 실제로 끝날 때까지 기다린 뒤 나간다 — 바로 다시 ./run.sh 하면 끝나 가던 서버를 "이미 실행 중"으로 보던 틈을 막는다(4단계 QA).
+cleanup() {
+  trap - INT TERM HUP EXIT
+  kill "$SERVER_PID" 2>/dev/null || true
+  wait "$SERVER_PID" 2>/dev/null || true
+}
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 129' HUP
+trap cleanup EXIT
 
 # 서버가 응답할 때까지 최대 5초 기다린 뒤 브라우저를 연다.
 for _ in $(seq 1 50); do

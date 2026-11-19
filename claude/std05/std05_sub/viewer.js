@@ -66,6 +66,7 @@ const state = {
   mode: 'original',
   current: 1,
   target: null,        // 아직 안 불러온 곳으로 이동을 눌렀을 때 { page, block } — 불러오면 그리로
+  pin: null,           // 쪽 이동으로 간 쪽 { page, y } — 사용자가 스크롤하기 전까지는 이 쪽을 '지금 쪽'으로(문서 끝이라 맨 위로 못 올 때)
   tocOpen: false,
   announcedDone: false,
   download: null,
@@ -619,7 +620,13 @@ function setMode(mode, keepPlace = true) {
   const done = [];
   state.pages.forEach((s, i) => { if (s.status === 'done') done.push(i + 1); });
   renderPages(done);
-  if (keepPlace && state.doc) scrollToPage(page, 'instant');
+  if (keepPlace && state.doc) { scrollToPage(page, 'instant'); pinPage(page); }
+}
+
+// 쪽 이동 직후의 위치를 기억한다. 마지막 쪽처럼 화면 맨 위까지 올릴 수 없는 쪽으로 가면 스크롤 위치로 셈한
+// '지금 쪽'이 앞쪽으로 돌아가 버린다(4단계 QA: 2쪽 문서 읽기 모드에서 쪽 2 입력 → 칸이 1로 되돌아감).
+function pinPage(page) {
+  state.pin = { page, y: window.scrollY };
 }
 
 // ── 4. 목차 ─────────────────────────────────────────────
@@ -708,6 +715,7 @@ function goTo(page, block = '', focus = true) {
   }
   const target = (block && document.getElementById(block)) || slot.section;
   scrollToEl(target, focus);
+  pinPage(page);
   state.current = page;
   syncPageUi();
 }
@@ -732,6 +740,7 @@ function goToTargetIfReady() {
   state.target = null;
   const target = (t.block && document.getElementById(t.block)) || state.pages[t.page - 1].section;
   scrollToEl(target, document.activeElement === state.pages[t.page - 1].section);
+  pinPage(t.page);
 }
 
 // 화면 맨 위(도구 막대 바로 아래)에 있는 쪽을 지금 쪽으로 본다.
@@ -739,6 +748,11 @@ let currentFrame = 0;
 function updateCurrent() {
   currentFrame = 0;
   if (!state.doc) return;
+  if (state.pin && Math.abs(window.scrollY - state.pin.y) < 2) {
+    if (state.pin.page !== state.current) { state.current = state.pin.page; syncPageUi(); }
+    return;
+  }
+  state.pin = null;
   const listRect = el.pageList.getBoundingClientRect();
   const barBottom = el.bar.hidden ? 0 : Math.max(0, el.bar.getBoundingClientRect().bottom);
   const x = Math.min(window.innerWidth - 2, Math.max(1, listRect.left + listRect.width / 2));
